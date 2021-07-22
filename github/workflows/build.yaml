@@ -1,0 +1,51 @@
+name: Build
+
+on: [push]
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - run: |
+        sudo apt-get update
+        sudo apt-get install cmake ninja-build
+
+    - name: Build & test
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX=. -G Ninja .
+        cmake --build build --target check install/strip
+
+  windows:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - run: choco install cmake ninja
+
+    - name: Add cl.exe to PATH
+      uses: microsoft/setup-msbuild@v1.0.2
+      # uses: seanmiddleditch/gha-setup-vsdevenv@v1
+      with:
+        vs-version: '[14,15)'
+
+    - name: Build & test
+      # run: msbuild -p:WindowsTargetPlatformVersion=10 test/UnitTests.vcxproj
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX=. -G Ninja .
+        cmake --build build --target check install
+
+  macos:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - run: |
+        brew update
+        brew install cmake ninja
+
+    - name: Build & test
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX=. -G Ninja .
+        cmake --build build --target check install/strip
