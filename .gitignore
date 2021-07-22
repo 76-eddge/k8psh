@@ -1,0 +1,8 @@
+# Compiled Files
+*.o
+*.obj
+*.out
+*.exe
+
+# Build directory
+/build

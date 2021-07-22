@@ -1,0 +1,63 @@
+name: Build
+
+on: [push]
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - run: |
+        sudo apt-get update
+        sudo apt-get install cmake ninja-build
+
+    - name: Build & Test
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX=. -G Ninja .
+        cmake --build build --target check install/strip
+
+  docker:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v1
+
+    - name: Test Dockerfile
+      run: docker build . --tag k8psh-test --target deploy
+      env:
+        DOCKER_BUILDKIT: 1
+
+    - name: Test Docker Image
+      run: docker run --rm -t k8psh-test
+
+  windows:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - run: choco install cmake ninja
+
+    - name: Enable MSVC
+      uses: ilammy/msvc-dev-cmd@v1.9.0
+      with:
+        toolset: "14.0"
+
+    - name: Build & Test
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX=. -G Ninja .
+        cmake --build build --target check install
+
+  macos:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - run: |
+        brew update
+        brew install cmake ninja
+
+    - name: Build & Test
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX=. -G Ninja .
+        cmake --build build --target check install/strip
