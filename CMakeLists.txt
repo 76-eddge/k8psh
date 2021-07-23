@@ -1,13 +1,20 @@
 cmake_minimum_required(VERSION 3.0)
 
+# Get the version
+execute_process(COMMAND git describe --tags OUTPUT_VARIABLE GIT_VERSION ERROR_QUIET)
+string(STRIP "${GIT_VERSION}" GIT_VERSION)
+
 # Set the project name
 project(k8psh)
-include_directories(src)
 
 # Specify the compile options / requirements
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+
+if (NOT ("${GIT_VERSION}" STREQUAL ""))
+  add_definitions(-DGIT_VERSION=${GIT_VERSION})
+endif ()
 
 if (MSVC)
   string(REGEX REPLACE "/W[1-3]" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
@@ -16,7 +23,10 @@ else ()
   add_compile_options(-Wall -Wextra -pedantic -Werror)
 endif ()
 
+include_directories(src)
+
 if (WIN32)
+  add_definitions(-DWINVER=0x601 -D_WIN32_WINNT=0x601)
   link_libraries(ws2_32)
 endif ()
 
@@ -33,7 +43,7 @@ endif ()
 # Create the server executable
 macro (install_link target link)
   if (WIN32)
-    install(CODE "execute_process(COMMAND cmd /c del ${link}.exe & mklink /h ${link}.exe ${target}.exe WORKING_DIRECTORY \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin)")
+    install(CODE "execute_process(COMMAND cmd /c del ${link}.exe & mklink ${link}.exe ${target}.exe & mklink /h ${link}.exe ${target}.exe WORKING_DIRECTORY \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin)")
   else ()
     install(CODE "execute_process(COMMAND ln -fs ${target} ${link} WORKING_DIRECTORY \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin)")
   endif ()

@@ -10,12 +10,15 @@ int main()
 {
 	k8psh::Socket::Initializer socketInit;
 	std::cout << "Creating sockets" << std::endl;
-	k8psh::Socket listener = k8psh::Socket::listen(15342);
+
+	k8psh::Socket listener = k8psh::Socket::listen(k8psh::Socket::RANDOM_PORT);
 	k8psh::Socket client;
 	k8psh::Socket server;
 
+	std::cout << "Listening on port " << listener.getPort() << std::endl;
+
 	while (!client.isValid())
-		client = k8psh::Socket::connect(15342);
+		client = k8psh::Socket::connect(listener.getPort());
 
 	while (!server.isValid())
 		server = listener.accept();

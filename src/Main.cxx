@@ -23,7 +23,16 @@
 static const std::string clientName = "k8psh";
 static const std::string serverName = clientName + "d";
 static const std::string environmentPrefix = "K8PSH_";
-static const std::string version = "v0.9";
+
+#ifdef GIT_VERSION
+	#define QUOTE_(X) #X
+	#define QUOTE(X) QUOTE_(X)
+static const std::string version = QUOTE(GIT_VERSION);
+	#undef QUOTE_
+	#undef QUOTE
+#else
+static const std::string version = "???";
+#endif
 
 // Gets the base name of the command.
 static std::string getBaseCommandName(const char *command)

@@ -37,6 +37,7 @@ public:
 
 	static constexpr Handle INVALID_HANDLE = Handle(-1);
 #endif
+	static const unsigned short RANDOM_PORT = 0;
 
 private:
 	Handle _handle;
@@ -89,6 +90,9 @@ public:
 	// Creates a read event, if it does not already exist, that can be used to poll the socket for new data.
 	// (On Windows the socket will automatically be placed in non-blocking mode, and the event is subject to spurious wake-ups since it is reset after a wait rather than after a read.)
 	Event createReadEvent();
+
+	// Gets the bound port of the socket, or zero if the socket is not valid.
+	unsigned short getPort() const;
 
 	// Checks if the socket has data to read.
 	bool hasData() const;

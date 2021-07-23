@@ -193,6 +193,19 @@ void k8psh::Socket::close()
 	}
 }
 
+// Gets the bound port of the socket, or zero if the socket is not valid.
+unsigned short k8psh::Socket::getPort() const
+{
+	sockaddr_in ipv4;
+#ifdef _WIN32
+	int length = int(sizeof(ipv4));
+#else
+	socklen_t length = socklen_t(sizeof(ipv4));
+#endif
+
+	return getsockname(_handle, reinterpret_cast<sockaddr *>(&ipv4), &length) == 0 ? ntohs(ipv4.sin_port) : 0;
+}
+
 // Checks if the socket has data to read.
 bool k8psh::Socket::hasData() const
 {

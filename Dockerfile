@@ -2,7 +2,7 @@
 # Build using Alpine Linux
 FROM alpine AS build
 
-RUN apk add cmake g++ ninja
+RUN apk add git cmake g++ ninja
 COPY . /root/k8psh/
 WORKDIR /root/k8psh
 
