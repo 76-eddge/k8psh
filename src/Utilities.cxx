@@ -12,6 +12,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 
 #ifdef _WIN32
 	#include <direct.h>
@@ -136,6 +137,7 @@ k8psh::Logger::~Logger()
 	auto time = std::chrono::system_clock::to_time_t(now);
 	auto gmTime = *std::gmtime(&time);
 	auto seconds = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch());
+	std::string message = _logger.str();
 
 	switch (_level)
 	{
@@ -153,12 +155,12 @@ k8psh::Logger::~Logger()
 	switch (_level)
 	{
 	case LEVEL_DEBUG:
-		ss << "(" << getDebugName(getFilename()) << ") " << _logger.str() << std::endl;
+		ss << "(" << getDebugName(getFilename()) << ") " << message << std::endl;
 		atomicWrite(stdout, ss.str());
 		break;
 
 	case LEVEL_WARNING:
-		ss << _logger.str() << std::endl;
+		ss << message << std::endl;
 		atomicWrite(stderr, ss.str());
 		break;
 
@@ -170,11 +172,14 @@ k8psh::Logger::~Logger()
 #else
 			std::size_t filenameIndex = filename.rfind("/src/") + 1;
 #endif
-			ss << _logger.str() << " (" << filename.substr(filenameIndex) << ":" << getLine() << ")" << std::endl;
+			ss << message << " (" << filename.substr(filenameIndex) << ":" << getLine() << ")" << std::endl;
 			atomicWrite(stderr, ss.str());
 			break;
 		}
 	}
+
+	if (_finalMessage)
+		*_finalMessage = std::move(message);
 }
 
 // Gets the stream used to log the message

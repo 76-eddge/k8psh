@@ -136,9 +136,10 @@ static void sendSocketPayloadString(k8psh::Socket &socket, PayloadType type, con
  */
 int k8psh::Process::runRemoteCommand(const std::string &workingDirectory, const k8psh::Configuration::Command &command, int argc, const char *argv[])
 {
-	// Find the server address to connect to
+	k8psh::Socket::Initializer socketInit;
 	Socket socket;
 
+	// Connect to the server
 	while (!socket.isValid())
 		socket = Socket::connect(command.getHost().getPort());
 
@@ -180,6 +181,8 @@ int k8psh::Process::runRemoteCommand(const std::string &workingDirectory, const 
 	waitSet[0] = stdInData._dataAvailable;
 
 	(void)_setmode(_fileno(stdin), _O_BINARY);
+	(void)_setmode(_fileno(stdout), _O_BINARY);
+	(void)_setmode(_fileno(stderr), _O_BINARY);
 	std::thread(readData, GetStdHandle(STD_INPUT_HANDLE), std::ref(stdInData)).detach();
 
 	waitSet[1] = socket.createReadEvent();
@@ -761,10 +764,7 @@ void k8psh::Process::start(const std::string &workingDirectory, const k8psh::Con
 					std::size_t readLength = socket.read(socketData, 0, true);
 
 					if (readLength == 0) // Closed socket indicates abnormal termination
-					{
-						LOG_ERROR << "Socket was closed unexpectedly";
 						socketData[0] = std::uint8_t(TERMINATE_COMMAND);
-					}
 					else if (readLength != socketData.size())
 						LOG_ERROR << "Failed to read data from socket";
 
@@ -792,11 +792,14 @@ void k8psh::Process::start(const std::string &workingDirectory, const k8psh::Con
 						(void)kill(process, 15); // Send TERM
 #endif
 
-						if (socketData[0] != TERMINATE_COMMAND)
+						if (readLength == 0)
+							LOG_ERROR << "Socket was closed unexpectedly";
+						else if (socketData[0] == TERMINATE_COMMAND)
+							LOG_DEBUG << "Received terminate command from client, halting process";
+						else
 							LOG_ERROR << "Read invalid payload type (" << socketData[0] << ") from socket";
 
-						LOG_DEBUG << "Received terminate command from client, halting process";
-						goto terminateShell;
+						goto terminateServer;
 					}
 				}
 			}
@@ -860,7 +863,7 @@ void k8psh::Process::start(const std::string &workingDirectory, const k8psh::Con
 		}
 #endif
 
-terminateShell:
+terminateServer:
 		;
 	}
 #ifdef _WIN32

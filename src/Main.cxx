@@ -178,6 +178,7 @@ BOOL WINAPI handleCtrlC(DWORD)
 // The main() for the server that waits requests to run executables in the configuration
 static int mainServer(int argc, const char *argv[])
 {
+	k8psh::Socket::Initializer socketInit;
 	std::string commandName = getBaseCommandName(argv[0]);
 	bool daemonize = false;
 	bool disableClientExecutables = false;
@@ -282,11 +283,7 @@ static int mainServer(int argc, const char *argv[])
 		listener = k8psh::Socket::listen(serverCommands->begin()->second.getHost().getPort());
 
 	// Generate the appropriate client symlinks / executables
-#ifdef _WIN32
-	std::string clientCommand;
-#else
 	std::string clientCommand = k8psh::Utilities::getExecutablePath();
-#endif
 	const auto commands = configuration.getCommands();
 
 	for (auto it = commands.begin(); it != commands.end(); ++it)
@@ -303,13 +300,12 @@ static int mainServer(int argc, const char *argv[])
 		if (!disableClientExecutables && (generateLocalExecutables || name != it->second.getHost().getHostname()))
 		{
 #ifdef _WIN32
-			if (clientCommand.empty())
-				clientCommand = k8psh::Utilities::getExecutablePath(); // Only use executable when copying (hardlinks can't be deleted while in use, so overwrite client executables option will fail)
-			else if (CreateHardLinkA(filename.c_str(), clientCommand.c_str(), NULL) != 0)
-				continue; // Successfully hardlinked
-
-			if (CopyFileA(clientCommand.c_str(), filename.c_str(), overwriteClientExecutables ? FALSE : TRUE) != 0)
-				clientCommand = filename; // Try to hardlink to copied file from now on
+			// Attempt to link or copy executable (hardlinks can't be deleted while in use, so don't hardlink to executable otherwise overwrite client executables option will fail)
+			if (CreateSymbolicLinkA(filename.c_str(), clientCommand.c_str(), SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0 ||
+					(it != commands.begin() && CreateHardLinkA(filename.c_str(), clientCommand.c_str(), NULL) != 0))
+				continue; // Successfully linked
+			else if (CopyFileA(clientCommand.c_str(), filename.c_str(), overwriteClientExecutables ? FALSE : TRUE) != 0)
+				clientCommand = filename; // Try to link to copied file from now on
 			else
 #else
 			if (symlink(clientCommand.c_str(), filename.c_str()) != 0)
@@ -472,18 +468,10 @@ static int mainServer(int argc, const char *argv[])
 
 int main(int argc, const char *argv[])
 {
-	try
-	{
-		k8psh::Socket::Initializer socketInit;
-		std::string commandName = getBaseCommandName(argv[0]);
+	std::string commandName = getBaseCommandName(argv[0]);
 
-		if (commandName == serverName)
-			return mainServer(argc, argv);
-		else
-			return mainClient(argc, argv);
-	}
-	catch (...)
-	{
-		return 1;
-	}
+	if (commandName == serverName)
+		return mainServer(argc, argv);
+	else
+		return mainClient(argc, argv);
 }

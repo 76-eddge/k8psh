@@ -55,12 +55,13 @@ public:
 private:
 	const Level _level;
 	std::stringstream _logger;
+	std::string *_finalMessage;
 
 public:
 	// Checks if debug logging is enabled for the specified filename.
 	static bool shouldLogDebug(const char *filename);
 
-	Logger(const char *filename, std::size_t line, const char *function, Level level) : DebugInformation(filename, line, function), _level(level) { }
+	Logger(const char *filename, std::size_t line, const char *function, Level level, std::string *finalMessage = nullptr) : DebugInformation(filename, line, function), _level(level), _finalMessage(finalMessage) { }
 	~Logger();
 
 	// Gets the stream used to log the message
@@ -84,7 +85,8 @@ struct NullStream
 #define LOG_WARNING ::k8psh::Logger(__FILE__, __LINE__, PREPROCESSOR_FUNCTION_IDENTIFIER, ::k8psh::Logger::LEVEL_WARNING).getStream()
 
 // Logs an error and throws an exception. Example: `LOG_ERROR << "An error occured";`
-#define LOG_ERROR for (::k8psh::Logger logger(__FILE__, __LINE__, PREPROCESSOR_FUNCTION_IDENTIFIER, ::k8psh::Logger::LEVEL_ERROR); true; throw std::runtime_error(logger.getStream().str())) logger.getStream()
+#define LOG_ERROR for (std::string message;; throw std::runtime_error(message)) \
+	::k8psh::Logger(__FILE__, __LINE__, PREPROCESSOR_FUNCTION_IDENTIFIER, ::k8psh::Logger::LEVEL_ERROR, &message).getStream()
 
 class Pipe
 {
