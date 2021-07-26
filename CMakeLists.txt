@@ -26,8 +26,11 @@ endif ()
 include_directories(src)
 
 if (WIN32)
-  add_definitions(-DWINVER=0x601 -D_WIN32_WINNT=0x601)
+  add_definitions(-DWIN32_LEAN_AND_MEAN -DNOMINMAX -DWINVER=0x601 -D_WIN32_WINNT=0x601)
   link_libraries(ws2_32)
+else ()
+  find_package (Threads)
+  link_libraries(Threads::Threads)
 endif ()
 
 # Specify the executable to build
@@ -43,7 +46,7 @@ endif ()
 # Create the server executable
 macro (install_link target link)
   if (WIN32)
-    install(CODE "execute_process(COMMAND cmd /c del ${link}.exe & mklink ${link}.exe ${target}.exe & mklink /h ${link}.exe ${target}.exe WORKING_DIRECTORY \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin)")
+    install(CODE "execute_process(COMMAND cmd /c del ${link}.exe & mklink ${link}.exe ${target}.exe || mklink /h ${link}.exe ${target}.exe WORKING_DIRECTORY \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin)")
   else ()
     install(CODE "execute_process(COMMAND ln -fs ${target} ${link} WORKING_DIRECTORY \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin)")
   endif ()

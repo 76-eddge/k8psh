@@ -16,8 +16,8 @@
 #ifdef _WIN32
 	#include <direct.h>
 	#include <io.h>
-	#include <winsock2.h>
 	#include <windows.h>
+	#include <winsock2.h>
 
 	#define K8PSH_PATH_MAX MAX_PATH
 	#define FILE_READ_MODE "rb"
