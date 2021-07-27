@@ -11,6 +11,7 @@ project(k8psh)
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG")
 
 if (NOT ("${GIT_VERSION}" STREQUAL ""))
   add_definitions(-DGIT_VERSION=${GIT_VERSION})
@@ -60,6 +61,7 @@ enable_testing()
 
 set(TESTS
   ConfigurationTest
+  k8pshTest
   SocketTest
   UtilitiesTest
 )

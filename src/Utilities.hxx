@@ -1,3 +1,5 @@
+// This software is released as part of the k8psh project.
+// Portions of this software are public domain or licensed under the MIT license. (See the license file for details.)
 
 #ifndef K8PSH_UTILITIES_HXX
 #define K8PSH_UTILITIES_HXX
@@ -54,7 +56,7 @@ public:
 
 private:
 	const Level _level;
-	std::stringstream _logger;
+	std::ostringstream _logger;
 	std::string *_finalMessage;
 
 public:
@@ -65,7 +67,7 @@ public:
 	~Logger();
 
 	// Gets the stream used to log the message
-	std::stringstream &getStream() const;
+	std::ostringstream &getStream() const;
 };
 
 // Logs a debug statement (if not enabled, statement has no side effect). Example: `LOG_DEBUG << "Here's some debug info: " << a << ", " << b;`
@@ -225,7 +227,7 @@ public:
 	 * @param value the value to assign to the environment variable
 	 * @return true if the environment variable was set, otherwise false
 	 */
-	static bool setEnvironmentVariable(const std::string &name, const OptionalString &value);
+	static bool setEnvironmentVariable(const std::string &name, const OptionalString &value = OptionalString());
 
 	/** Substitutes environment variables into the given string. Environment variables must take the form ${VAR:-default value} with the default value being optional.
 	 *

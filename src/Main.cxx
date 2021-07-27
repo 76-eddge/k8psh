@@ -1,4 +1,7 @@
+// This software is released as part of the k8psh project.
+// Portions of this software are public domain or licensed under the MIT license. (See the license file for details.)
 
+#include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <iostream>
@@ -11,6 +14,7 @@
 	#include <windows.h>
 #else
 	#include <fcntl.h>
+	#include <poll.h>
 	#include <signal.h>
 	#include <sys/stat.h>
 	#include <unistd.h>
@@ -156,7 +160,18 @@ static HANDLE exitRequested;
 static k8psh::Pipe exitRequested;
 #endif
 
-// Handles signals by requesting that the application exit
+// Clamps a value between 0 and some maximum value.
+template <typename T> static T clampPositive(T value, T max)
+{
+	if (value < 0)
+		return 0;
+	else if (value > max)
+		return max;
+
+	return value;
+}
+
+// Handles signals by requesting that the application exit.
 extern "C" void handleSignal(int signal)
 {
 	LOG_DEBUG << "Handling signal " << signal;
@@ -188,6 +203,7 @@ static int mainServer(int argc, const char *argv[])
 	std::string directory;
 	std::string name;
 	std::string pidFilename = "/var/run/" + serverName + ".pid";
+	std::string timeout = "-1";
 
 	// Parse command line arguments
 	for (int i = 1; i < argc; i++)
@@ -220,7 +236,8 @@ static int mainServer(int argc, const char *argv[])
 			directory += '/';
 
 		else if (parseOption(arg, "-n", "--name", "[name]", i, argc, argv, name) ||
-				parseOption(arg, "-p", "--pidfile", "[file]", i, argc, argv, pidFilename))
+				parseOption(arg, "-p", "--pidfile", "[file]", i, argc, argv, pidFilename) ||
+				parseOption(arg, "-t", "--timeout", "[ms]", i, argc, argv, timeout))
 			; // Option recognized and parsed
 
 		else if (arg == "-h" || arg == "--help")
@@ -247,6 +264,8 @@ static int mainServer(int argc, const char *argv[])
 			std::cout << "      Overwrite client executables rather than fail with error." << std::endl;
 			std::cout << "  -p, --pidfile [file]" << std::endl;
 			std::cout << "      The file to store the PID of the server." << std::endl;
+			std::cout << "  -t, --timeout [ms]" << std::endl;
+			std::cout << "      The time in milliseconds before the server exits. Defaults to -1 (run forever)" << std::endl;
 			std::cout << "  -v, --version" << std::endl;
 			std::cout << "      Prints the version and exits." << std::endl;
 			return 0;
@@ -338,6 +357,7 @@ static int mainServer(int argc, const char *argv[])
 			return -1;
 
 		signal(SIGHUP, SIG_IGN);
+		signal(SIGCHLD, SIG_IGN);
 
 		(void)k8psh::Utilities::changeWorkingDirectory("/");
 		(void)umask(0);
@@ -353,9 +373,12 @@ static int mainServer(int argc, const char *argv[])
 		(void)close(devNull);
 #endif
 	}
-#ifdef SIGHUP
+#ifndef _WIN32
 	else
+	{
 		signal(SIGHUP, handleSignal);
+		signal(SIGCHLD, SIG_IGN);
+	}
 #endif
 
 	signal(SIGTERM, handleSignal);
@@ -390,28 +413,46 @@ static int mainServer(int argc, const char *argv[])
 	pollSet[1].events = POLLIN;
 #endif
 
+	long timeoutMs = 0;
+	try { timeoutMs = std::stol(timeout); }
+	catch (const std::exception &e) { LOG_ERROR << "Failed to parse timeout: " << e.what(); }
+
+	auto endTime = timeoutMs >= 0 ? std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs) : std::chrono::steady_clock::time_point::max();
+
 	LOG_DEBUG << "Entering server connection listener loop";
 
 	for (;;)
 	{
+		auto remainingMs = std::chrono::duration_cast<std::chrono::milliseconds>(endTime -
+			(timeoutMs >= 0 ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point::max())).count();
 #ifdef _WIN32
-		DWORD waitResult = WaitForMultipleObjects(DWORD(sizeof(waitSet) / sizeof(waitSet[0]) - (listener.isValid() ? 0 : 1)), waitSet, FALSE, INFINITE);
+		auto waitMs = clampPositive(remainingMs, std::chrono::milliseconds::rep(INFINITE - 1));
+		DWORD waitResult = WaitForMultipleObjects(DWORD(sizeof(waitSet) / sizeof(waitSet[0]) - (listener.isValid() ? 0 : 1)), waitSet, FALSE, timeoutMs >= 0 ? DWORD(waitMs) : INFINITE);
 
 		if (waitResult == WAIT_FAILED)
 			LOG_ERROR << "Failed to wait on multiple objects for new clients: " << GetLastError();
 		else if (waitResult == WAIT_OBJECT_0)
 			break;
+		else if (waitResult == WAIT_TIMEOUT)
 #else
+		auto waitMs = clampPositive(remainingMs, std::chrono::milliseconds::rep(unsigned(-1) >> 1));
 		int pollResult;
 
-		do pollResult = poll(pollSet, nfds_t(sizeof(pollSet) / sizeof(pollSet[0]) - (listener.isValid() ? 0 : 1)), -1);
+		do pollResult = poll(pollSet, nfds_t(sizeof(pollSet) / sizeof(pollSet[0]) - (listener.isValid() ? 0 : 1)), timeoutMs >= 0 ? int(waitMs) : -1);
 		while (pollResult < 0 && (errno == EAGAIN || errno == EINTR));
 
 		if (pollResult < 0 || (pollSet[1].revents & POLLERR) != 0)
 			LOG_ERROR << "Failed to poll for new clients: " << errno;
 		else if ((pollSet[0].revents & (POLLIN | POLLHUP | POLLERR)) != 0)
 			break;
+		else if (pollResult == 0)
 #endif
+		{
+			if (remainingMs <= waitMs)
+				break;
+			else
+				continue;
+		}
 
 		if (!listener.isValid())
 			continue;
@@ -425,20 +466,20 @@ static int mainServer(int argc, const char *argv[])
 #ifdef _WIN32
 			std::thread(k8psh::Process::start, configuration.getWorkingDirectory(), *serverCommands, std::move(client)).detach();
 #else
-			switch (fork())
+			pid_t child = fork();
+
+			if (child == 0)
 			{
-			case 0:
 				(void)close(listener.abandon());
+				signal(SIGCHLD, SIG_DFL);
 				k8psh::Process::start(configuration.getWorkingDirectory(), *serverCommands, std::move(client));
 				return 0;
-
-			case -1:
-				LOG_ERROR << "Failed to fork client";
-
-			default:
-				(void)close(client.abandon());
-				break;
 			}
+
+			(void)close(client.abandon());
+
+			if (child == -1)
+				LOG_ERROR << "Failed to fork client: " << errno;
 #endif
 		}
 	}

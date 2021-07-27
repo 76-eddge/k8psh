@@ -1,3 +1,5 @@
+// This software is released as part of the k8psh project.
+// Portions of this software are public domain or licensed under the MIT license. (See the license file for details.)
 
 #include "Utilities.hxx"
 
@@ -119,7 +121,7 @@ bool k8psh::Logger::shouldLogDebug(const char *filename)
 	#undef K8PSH_QUOTE
 #endif
 
-	return listContainsCaseInsensitive(toDebug, getDebugName(filename)) || listContainsCaseInsensitive(toDebug, "all");
+	return !toDebug.empty() && (listContainsCaseInsensitive(toDebug, getDebugName(filename)) || listContainsCaseInsensitive(toDebug, "all"));
 }
 
 k8psh::Logger::~Logger()
@@ -127,7 +129,7 @@ k8psh::Logger::~Logger()
 	static auto atomicWrite = [](std::FILE *stream, const std::string &content) { (void)std::fwrite(&content[0], content.length(), 1, stream); };
 
 	std::string level5Chars;
-	std::stringstream ss;
+	std::ostringstream ss;
 #ifdef _WIN32
 	auto id = std::this_thread::get_id();
 #else
@@ -183,9 +185,9 @@ k8psh::Logger::~Logger()
 }
 
 // Gets the stream used to log the message
-std::stringstream &k8psh::Logger::getStream() const
+std::ostringstream &k8psh::Logger::getStream() const
 {
-	return const_cast<std::stringstream &>(_logger);
+	return const_cast<std::ostringstream &>(_logger);
 }
 
 // Constructs a new anonymous pipe

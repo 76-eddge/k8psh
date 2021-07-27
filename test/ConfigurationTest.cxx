@@ -1,3 +1,7 @@
+// This software is released as part of the k8psh project.
+// Portions of this software are public domain or licensed under the MIT license. (See the license file for details.)
+
+#include "Configuration.cxx"
 
 #include <iostream>
 #include <string>
@@ -5,7 +9,6 @@
 
 #include "Test.hxx"
 
-#include "Configuration.cxx"
 #include "Utilities.cxx"
 
 namespace std {

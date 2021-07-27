@@ -1,3 +1,5 @@
+// This software is released as part of the k8psh project.
+// Portions of this software are public domain or licensed under the MIT license. (See the license file for details.)
 
 #ifndef K8PSH_CONFIGURATION_HXX
 #define K8PSH_CONFIGURATION_HXX
