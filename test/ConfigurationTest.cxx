@@ -44,18 +44,18 @@ int main()
 {
 	std::vector<std::string> badConfigurations = {
 		"badoption=value",
-		"workingDirectory=bad value",
-		"workingDirectory=\"good val\tue\" extra\n# This is the second line",
-		"workingDirectory=\"bad value",
-		"workingDirectory=\"bad value\\k\"",
-		"workingDirectory='bad value",
-		"workingDirectory=${PATH}\n"
+		"baseDirectory=bad value",
+		"baseDirectory=\"good val\tue\" extra\n# This is the second line",
+		"baseDirectory=\"bad value",
+		"baseDirectory=\"bad value\\k\"",
+		"baseDirectory='bad value",
+		"baseDirectory=${PATH}\n"
 			"[\nblah]",
-		"workingDirectory=${PATH}\n"
+		"baseDirectory=${PATH}\n"
 			"[ blah:65536 ]",
-		"workingDirectory=${PATH}\n"
+		"baseDirectory=${PATH}\n"
 			"[ blah:65_36 ]",
-		"workingDirectory=${PATH}\n"
+		"baseDirectory=${PATH}\n"
 			"[blah\n]",
 	};
 
@@ -64,7 +64,7 @@ int main()
 
 	TEST_THAT(k8psh::Utilities::setEnvironmentVariable("TEST_ENV_1", "blah"));
 	TEST_THAT(k8psh::Utilities::setEnvironmentVariable("TEST_ENV_2", "blah2"));
-	k8psh::Configuration config = k8psh::Configuration::load("workingDirectory = ${TEST_ENV_1}/${TEST_ENV_2} # The directory that all relative working directories will be based on\n"
+	k8psh::Configuration config = k8psh::Configuration::load("baseDirectory = ${TEST_ENV_1}/${TEST_ENV_2} # The directory that all relative working directories will be based on\n"
 		"\n"
 		"# Test comment\n"
 		"[empty]\n"
@@ -72,10 +72,10 @@ int main()
 		"[ blah:1895 ] # section tags are strings, so spaces can be inside []\n"
 		"blah A= ?B= test blah-real 'First Arg' \"\\\"Escaped\\\"\\tArg \"\"\"\n"
 		"some_exe theExe\n"
-		"['blah 2']\n"
+		"['blah 2'] arg1\n"
 		"blah ENV= # Only name is required");
 
-	TEST_THAT(config.getWorkingDirectory() == k8psh::Utilities::getAbsolutePath(k8psh::Utilities::getWorkingDirectory() + "/blah/blah2"));
+	TEST_THAT(config.getBaseDirectory() == k8psh::Utilities::getAbsolutePath(k8psh::Utilities::getWorkingDirectory() + "/blah/blah2"));
 	TEST_THAT(!config.getCommands("non-existant"));
 
 	// Test client commands

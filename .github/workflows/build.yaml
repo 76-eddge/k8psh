@@ -72,11 +72,13 @@ jobs:
         version: latest
         config: buildkitd.toml
 
+    - name: Login to DockerHub
+      if: startsWith(github.ref, 'refs/tags/')
+      run: echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login --username 76eddge --password-stdin
+
     - name: Push Docker Images
       if: startsWith(github.ref, 'refs/tags/')
-      run: echo "$DOCKERHUB_TOKEN" | docker login --username 76eddge --password-stdin && docker buildx build . --tag 76eddge/k8psh --tag 76eddge/k8psh:${GITHUB_REF/refs\/tags\//} --platform linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64/v8,linux/ppc64le,linux/s390x --target deploy --push
-      env:
-        DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      run: docker buildx build . --tag 76eddge/k8psh --tag 76eddge/k8psh:${GITHUB_REF/refs\/tags\//} --platform linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64/v8,linux/ppc64le,linux/s390x --target deploy --push
 
   windows:
     runs-on: windows-latest

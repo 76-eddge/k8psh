@@ -27,7 +27,7 @@ public:
 	 * @param argv additional arguments used to start the process
 	 * @return the exit code of the process
 	 */
-	static int runRemoteCommand(const std::string &workingDirectory, const Configuration::Command &command, int argc, const char *argv[]);
+	static int runRemoteCommand(const std::string &workingDirectory, const Configuration::Command &command, std::size_t argc, const char *argv[]);
 
 	/** Starts the process requested by the remote socket channel. This call is non-blocking and will spawn a new thread or process to handle communications on the socket. The socket does not need to be closed.
 	 *

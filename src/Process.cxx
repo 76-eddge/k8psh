@@ -136,7 +136,7 @@ static void sendSocketPayloadString(k8psh::Socket &socket, PayloadType type, con
  * @param argv additional arguments used to start the process
  * @return the exit code of the process
  */
-int k8psh::Process::runRemoteCommand(const std::string &workingDirectory, const k8psh::Configuration::Command &command, int argc, const char *argv[])
+int k8psh::Process::runRemoteCommand(const std::string &workingDirectory, const k8psh::Configuration::Command &command, std::size_t argc, const char *argv[])
 {
 	k8psh::Socket::Initializer socketInit;
 	Socket socket;
@@ -149,7 +149,7 @@ int k8psh::Process::runRemoteCommand(const std::string &workingDirectory, const 
 	LOG_DEBUG << "Sending working directory (\"" << workingDirectory << "\") to server";
 	sendSocketPayloadString(socket, WORKING_DIRECTORY, workingDirectory);
 
-	for (int i = 1; i < argc; i++)
+	for (std::size_t i = 1; i < argc; i++)
 	{
 		LOG_DEBUG << "Sending argument (\"" << argv[i] << "\") to server";
 		sendSocketPayloadString(socket, COMMAND_ARGUMENT, argv[i]);

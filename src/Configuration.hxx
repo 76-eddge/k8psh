@@ -4,6 +4,7 @@
 #ifndef K8PSH_CONFIGURATION_HXX
 #define K8PSH_CONFIGURATION_HXX
 
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -21,10 +22,14 @@ public:
 
 		std::string _hostname;
 		unsigned short _port;
+		std::vector<std::string> _options;
 
 	public:
 		// Gets the name of the host.
 		const std::string &getHostname() const { return _hostname; }
+
+		// Gets the options for the host.
+		const std::vector<std::string> &getOptions() const { return _options; }
 
 		// Gets the port of the host.
 		unsigned short getPort() const { return _port; }
@@ -34,14 +39,14 @@ public:
 	{
 		friend class Configuration;
 
-		Host _host;
+		std::shared_ptr<Host> _host;
 		std::string _name;
 		std::vector<std::string> _executable;
 		std::vector<std::string> _environmentVariables;
 
 	public:
 		// Gets the host of the command.
-		const Host &getHost() const { return _host; }
+		const Host &getHost() const { return *_host; }
 
 		// Gets the name of the command.
 		const std::string &getName() const { return _name; }
@@ -57,7 +62,7 @@ public:
 	typedef std::unordered_map<std::string, CommandMap> HostCommandsMap;
 
 private:
-	std::string _workingDirectory;
+	std::string _baseDirectory;
 	HostCommandsMap _hostCommands;
 	CommandMap _commands;
 
@@ -77,8 +82,8 @@ public:
 	// Gets all commands from the configuration.
 	const CommandMap &getCommands() const { return _commands; }
 
-	// Gets the working directory for the configuration.
-	const std::string &getWorkingDirectory() const { return _workingDirectory; }
+	// Gets the base directory for the configuration.
+	const std::string &getBaseDirectory() const { return _baseDirectory; }
 };
 
 } // k8psh

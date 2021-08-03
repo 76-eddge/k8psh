@@ -171,14 +171,14 @@ static std::size_t parseHost(const std::string &configurationString, std::size_t
 	else if (configurationString[offset] != ']')
 		LOG_ERROR << "Expecting host section close tag (]), but found \"" << getRestOfLine(configurationString, offset) << "\"";
 
-	return offset + 1;
+	return skipNonNewlineWhitespace(configurationString, offset + 1);
 }
 
-// Parses a line containing a command.
-static std::size_t parseCommand(const std::string &configurationString, std::size_t offset, std::vector<std::string> &values)
+// Parses a line containing whitespace delimited arguments.
+static std::size_t parseArguments(const std::string &configurationString, std::size_t offset, std::vector<std::string> &values)
 {
 	// Parse until a comment or end of line
-	while (!k8psh::Utilities::isWhitespace(configurationString[offset]) && configurationString[offset] != '#')
+	while (configurationString[offset] && !k8psh::Utilities::isWhitespace(configurationString[offset]) && configurationString[offset] != '#')
 	{
 		std::string value;
 		offset = skipNonNewlineWhitespace(configurationString, parseString(configurationString, offset, value));
@@ -195,7 +195,7 @@ k8psh::Configuration k8psh::Configuration::load(const std::string &configuration
 	std::string absoluteWorkingPath = Utilities::getAbsolutePath(workingPath);
 	std::size_t i = 0;
 
-	configuration._workingDirectory = absoluteWorkingPath;
+	configuration._baseDirectory = absoluteWorkingPath;
 
 	// Parse client settings
 	for (;;)
@@ -212,15 +212,15 @@ k8psh::Configuration k8psh::Configuration::load(const std::string &configuration
 
 			i = ensureRestOfLineEmpty(configurationString, getConfigurationValue(configurationString, i, key, value));
 
-			if (key == "workingDirectory")
-				configuration._workingDirectory = Utilities::isAbsolutePath(value) ? value : Utilities::getAbsolutePath(absoluteWorkingPath + '/' + value);
+			if (key == "baseDirectory")
+				configuration._baseDirectory = Utilities::isAbsolutePath(value) ? value : Utilities::getAbsolutePath(absoluteWorkingPath + '/' + value);
 			else
 				LOG_ERROR << "Unrecognized configuration key \"" << key << '"';
 		}
 	}
 
 	// Parse server settings
-	Host currentHost;
+	std::shared_ptr<Host> currentHost;
 	unsigned short currentPort = DEFAULT_STARTING_PORT;
 
 	for (;;)
@@ -233,8 +233,9 @@ k8psh::Configuration k8psh::Configuration::load(const std::string &configuration
 			i = skipComment(configurationString, i + 1);
 		else if (configurationString[i] == '[') // Host section
 		{
+			currentHost = std::make_shared<Host>();
 			std::string host;
-			i = ensureRestOfLineEmpty(configurationString, parseHost(configurationString, skipNonNewlineWhitespace(configurationString, i + 1), host));
+			i = ensureRestOfLineEmpty(configurationString, parseArguments(configurationString, parseHost(configurationString, skipNonNewlineWhitespace(configurationString, i + 1), host), currentHost->_options));
 
 			// Parse the port
 			std::size_t colon = host.find(":");
@@ -257,16 +258,15 @@ k8psh::Configuration k8psh::Configuration::load(const std::string &configuration
 				currentPort = static_cast<unsigned short>(portValue);
 			}
 
-			// Assign the new host
-			currentHost = Host();
-			currentHost._hostname = host.substr(0, colon);
-			currentHost._port = currentPort++;
+			// Assign the new host information
+			currentHost->_hostname = host.substr(0, colon);
+			currentHost->_port = currentPort++;
 		}
 		else // Executable
 		{
 			Command command;
 			std::vector<std::string> values;
-			i = ensureRestOfLineEmpty(configurationString, parseCommand(configurationString, i, values));
+			i = ensureRestOfLineEmpty(configurationString, parseArguments(configurationString, i, values));
 
 			// Create the command
 			command._host = currentHost;
@@ -284,7 +284,7 @@ k8psh::Configuration k8psh::Configuration::load(const std::string &configuration
 				command._executable.emplace_back(command.getName());
 
 			// Add the command to the configuration
-			configuration._hostCommands[currentHost.getHostname()][command.getName()] = command;
+			configuration._hostCommands[currentHost->getHostname()][command.getName()] = command;
 			configuration._commands[command.getName()] = std::move(command);
 		}
 	}

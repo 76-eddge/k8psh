@@ -111,7 +111,7 @@ int main(int argc, const char *argv[])
 	// Create configuration file
 	std::ofstream configFile((basename + ".conf").c_str());
 
-	configFile << "workingDirectory = ." << std::endl;
+	configFile << "baseDirectory = ." << std::endl;
 	configFile << "[k8pshTest]" << std::endl;
 	configFile << "'0_" << basename << "' K8PSH_TEST_NAME= PATH= '" << executable << "' 0" << std::endl;
 	configFile << "'1_" << basename << "' K8PSH_TEST_NAME= =PATH= '" << executable << "' 1" << std::endl;
@@ -146,4 +146,6 @@ int main(int argc, const char *argv[])
 	TEST_THAT(runCommand("3_" + basename + " < test.out > test3.out 2> test.err") == 3);
 	TEST_THAT(k8psh::Utilities::readFile("test3.out").empty());
 	TEST_THAT(k8psh::Utilities::readFile("test.err").empty());
+
+	std::exit(0);
 }

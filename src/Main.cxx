@@ -74,22 +74,37 @@ static k8psh::Configuration getConfiguration(const k8psh::OptionalString &config
  * @param argumentCount the total number of arguments
  * @param arguments the arguments
  * @param value a reference to the value that will be set to the option's argument
+ * @param deferredArgs an optional deferred arguments list to be populated with the resulting arguments instead of filling the value
  * @return true if the option is parsed successfully, otherwise false
  */
-static bool parseOption(const std::string &argument, const std::string &shortOption, const std::string &option, const std::string &expecting, int &index, int argumentCount, const char *arguments[], std::string &value)
+template <typename ArgListT> static bool parseOption(const std::string &argument, const std::string &shortOption, const std::string &option, const std::string &expecting, std::size_t &index, std::size_t argumentCount, const ArgListT &arguments, std::string &value, std::vector<std::string> *deferredArgs = nullptr)
 {
 	if ((argument == shortOption && !shortOption.empty()) || argument == option)
 	{
 		if (index + 1 == argumentCount)
 			LOG_ERROR << "Expecting " << expecting << " after argument " << argument;
 
-		value = arguments[++index];
+		if (deferredArgs)
+		{
+			deferredArgs->emplace_back(argument);
+			deferredArgs->emplace_back(arguments[++index]);
+		}
+		else
+			value = arguments[++index];
+
 		return true;
 	}
 
 	if (argument.length() > option.length() && argument.substr(0, option.length() + 1) == option + "=")
 	{
-		value = argument.substr(option.length() + 1);
+		if (deferredArgs)
+		{
+			deferredArgs->emplace_back(option);
+			deferredArgs->emplace_back(argument.substr(option.length() + 1));
+		}
+		else
+			value = argument.substr(option.length() + 1);
+
 		return true;
 	}
 
@@ -101,12 +116,12 @@ static int mainClient(int argc, const char *argv[])
 {
 	std::string commandName = getBaseCommandName(argv[0]);
 	k8psh::OptionalString config;
-	int i = 0;
+	std::size_t i = 0;
 
 	// Parse command line arguments
 	if (commandName == clientName)
 	{
-		for (i++; i < argc; i++)
+		for (i++; i < std::size_t(argc); i++)
 		{
 			std::string arg = argv[i];
 			LOG_DEBUG << "Parsing command line argument " << arg;
@@ -151,7 +166,7 @@ static int mainClient(int argc, const char *argv[])
 		LOG_ERROR << "Failed to find command \"" << commandName << "\" in configuration";
 
 	LOG_DEBUG << "Starting command " << commandName;
-	return k8psh::Process::runRemoteCommand(k8psh::Utilities::relativize(configuration.getWorkingDirectory(), k8psh::Utilities::getWorkingDirectory()), commandIt->second, argc - i, argv + i);
+	return k8psh::Process::runRemoteCommand(k8psh::Utilities::relativize(configuration.getBaseDirectory(), k8psh::Utilities::getWorkingDirectory()), commandIt->second, std::size_t(argc) - i, argv + i);
 }
 
 #ifdef _WIN32
@@ -190,38 +205,42 @@ BOOL WINAPI handleCtrlC(DWORD)
 }
 #endif
 
+static const std::string defaultPidFilename = "/var/run/" + serverName + ".pid";
+
 // The main() for the server that waits requests to run executables in the configuration
 static int mainServer(int argc, const char *argv[])
 {
 	k8psh::Socket::Initializer socketInit;
 	std::string commandName = getBaseCommandName(argv[0]);
+	std::vector<std::string> deferredArgs;
 	bool daemonize = false;
 	bool disableClientExecutables = false;
 	bool generateLocalExecutables = false;
+	bool keepClientExecutables = false;
 	bool overwriteClientExecutables = false;
 	k8psh::OptionalString config;
 	std::string directory;
 	std::string name;
-	std::string pidFilename = "/var/run/" + serverName + ".pid";
+	std::string pidFilename = defaultPidFilename;
 	std::string timeout = "-1";
 
 	// Parse command line arguments
-	for (int i = 1; i < argc; i++)
+	for (std::size_t i = 1; i < std::size_t(argc); i++)
 	{
 		std::string arg = argv[i];
 		LOG_DEBUG << "Parsing command line argument " << arg;
 
-		if (arg == "-b" || arg == "--background")
-			daemonize = true;
+		if (arg == "-b" || arg == "--background" ||
+				arg == "-d" || arg == "--disable-client-executables" ||
+				arg == "-k" || arg == "--keep-client-executables" ||
+				arg == "-l" || arg == "--generate-local-executables" ||
+				arg == "-o" || arg == "--overwrite-client-executables")
+			deferredArgs.emplace_back(arg);
 
-		else if (arg == "-d" || arg == "--disable-client-executables")
-			disableClientExecutables = true;
-
-		else if (arg == "-l" || arg == "--generate-local-executables")
-			generateLocalExecutables = true;
-
-		else if (arg == "-o" || arg == "--overwrite-client-executables")
-			overwriteClientExecutables = true;
+		else if (parseOption(arg, "-e", "--executable-directory", "[directory]", i, argc, argv, directory, &deferredArgs) ||
+				parseOption(arg, "-p", "--pidfile", "[file]", i, argc, argv, pidFilename, &deferredArgs) ||
+				parseOption(arg, "-t", "--timeout", "[ms]", i, argc, argv, timeout, &deferredArgs))
+			; // Option recognized and parsed
 
 		else if (arg == "-v" || arg == "--version")
 		{
@@ -232,12 +251,7 @@ static int mainServer(int argc, const char *argv[])
 		else if (parseOption(arg, "-c", "--config", "[file]", i, argc, argv, config))
 			config.exists();
 
-		else if (parseOption(arg, "-e", "--executable-directory", "[directory]", i, argc, argv, directory))
-			directory += '/';
-
-		else if (parseOption(arg, "-n", "--name", "[name]", i, argc, argv, name) ||
-				parseOption(arg, "-p", "--pidfile", "[file]", i, argc, argv, pidFilename) ||
-				parseOption(arg, "-t", "--timeout", "[ms]", i, argc, argv, timeout))
+		else if (parseOption(arg, "-n", "--name", "[name]", i, argc, argv, name))
 			; // Option recognized and parsed
 
 		else if (arg == "-h" || arg == "--help")
@@ -256,6 +270,8 @@ static int mainServer(int argc, const char *argv[])
 			std::cout << "      The directory used to create the client executables." << std::endl;
 			std::cout << "  -h, --help" << std::endl;
 			std::cout << "      Displays usage and exits." << std::endl;
+			std::cout << "  -k, --keep-client-executables" << std::endl;
+			std::cout << "      Keeps client executables instead of removing them on exit." << std::endl;
 			std::cout << "  -l, --generate-local-executables" << std::endl;
 			std::cout << "      Generate client executables for local executables." << std::endl;
 			std::cout << "  -n, --name [name]" << std::endl;
@@ -263,9 +279,9 @@ static int mainServer(int argc, const char *argv[])
 			std::cout << "  -o, --overwrite-client-executables" << std::endl;
 			std::cout << "      Overwrite client executables rather than fail with error." << std::endl;
 			std::cout << "  -p, --pidfile [file]" << std::endl;
-			std::cout << "      The file to store the PID of the server." << std::endl;
+			std::cout << "      The file to store the PID of the server. Defaults to " << defaultPidFilename << " for server." << std::endl;
 			std::cout << "  -t, --timeout [ms]" << std::endl;
-			std::cout << "      The time in milliseconds before the server exits. Defaults to -1 (run forever)" << std::endl;
+			std::cout << "      The time in milliseconds before the server exits. Defaults to -1 (run forever) for server, 0 for client" << std::endl;
 			std::cout << "  -v, --version" << std::endl;
 			std::cout << "      Prints the version and exits." << std::endl;
 			return 0;
@@ -292,14 +308,63 @@ static int mainServer(int argc, const char *argv[])
 	}
 
 	// Process server configuration
+	std::size_t deferredArgc = deferredArgs.size();
 	const auto configuration = getConfiguration(config);
 	const auto serverCommands = configuration.getCommands(name);
 	k8psh::Socket listener;
 
 	if (!serverCommands || serverCommands->empty())
-		LOG_WARNING << "No server commands found in configuration, sleeping";
+	{
+		LOG_DEBUG << "No server commands found in configuration, assuming client";
+
+		keepClientExecutables = true;
+		timeout = "0";
+	}
 	else
-		listener = k8psh::Socket::listen(serverCommands->begin()->second.getHost().getPort());
+	{
+		const auto host = serverCommands->begin()->second.getHost();
+
+		// Update deferred arguments and set limit to prevent overlapping config file and command line arguments (prepend the config file arguments, so command line will be processed last)
+		deferredArgc = host.getOptions().empty() ? deferredArgc : host.getOptions().size();
+		deferredArgs.insert(deferredArgs.begin(), host.getOptions().begin(), host.getOptions().end());
+		listener = k8psh::Socket::listen(host.getPort());
+	}
+
+	// Parse deferred command line arguments
+	for (std::size_t i = 0; i < deferredArgc; i++)
+	{
+		const std::string &arg = deferredArgs[i];
+		LOG_DEBUG << "Parsing deferred command line argument " << arg;
+
+		if (arg == "-b" || arg == "--background")
+			daemonize = true;
+
+		else if (arg == "-d" || arg == "--disable-client-executables")
+			disableClientExecutables = true;
+
+		else if (arg == "-k" || arg == "--keep-client-executables")
+			keepClientExecutables = true;
+
+		else if (arg == "-l" || arg == "--generate-local-executables")
+			generateLocalExecutables = true;
+
+		else if (arg == "-o" || arg == "--overwrite-client-executables")
+			overwriteClientExecutables = true;
+
+		else if (parseOption(arg, "-e", "--executable-directory", "[directory]", i, deferredArgc, deferredArgs, directory))
+			directory += '/';
+
+		else if (parseOption(arg, "-p", "--pidfile", "[file]", i, deferredArgc, deferredArgs, pidFilename) ||
+				parseOption(arg, "-t", "--timeout", "[ms]", i, deferredArgc, deferredArgs, timeout))
+			; // Option recognized and parsed
+
+		else
+			LOG_WARNING << "Ignoring unrecognized option " << arg;
+
+		// Update limit to full size after processing all arguments from config file
+		if (i + 1 >= deferredArgc)
+			deferredArgc = deferredArgs.size();
+	}
 
 	// Generate the appropriate client symlinks / executables
 	std::string clientCommand = k8psh::Utilities::getExecutablePath();
@@ -333,175 +398,184 @@ static int mainServer(int argc, const char *argv[])
 		}
 	}
 
-	// Daemonize, if desired
-	if (daemonize)
-	{
-#ifdef _WIN32
-		LOG_ERROR << "Daemon not supported";
-#else
-		LOG_DEBUG << "Starting daemon";
-
-		switch (fork())
-		{
-		case 0:
-			break;
-
-		case -1:
-			LOG_ERROR << "Failed to fork daemon";
-
-		default:
-			return 0;
-		}
-
-		if (setsid() == -1)
-			return -1;
-
-		signal(SIGHUP, SIG_IGN);
-		signal(SIGCHLD, SIG_IGN);
-
-		(void)k8psh::Utilities::changeWorkingDirectory("/");
-		(void)umask(0);
-
-		int devNull = open("/dev/null", O_RDWR, 0);
-
-		if (devNull == -1)
-			LOG_ERROR << "Failed to open /dev/null for daemon";
-
-		(void)dup2(devNull, STDIN_FILENO);
-		(void)dup2(devNull, STDOUT_FILENO);
-		(void)dup2(devNull, STDERR_FILENO);
-		(void)close(devNull);
-#endif
-	}
-#ifndef _WIN32
-	else
-	{
-		signal(SIGHUP, handleSignal);
-		signal(SIGCHLD, SIG_IGN);
-	}
-#endif
-
-	signal(SIGTERM, handleSignal);
-	signal(SIGINT, handleSignal);
-
-#ifdef _WIN32
-	(void)SetConsoleCtrlHandler(handleCtrlC, TRUE);
-#else
-	// Create PID file
-	FILE *pidFile = pidFilename.empty() ? NULL : fopen(pidFilename.c_str(), "w");
-
-	if (pidFile)
-	{
-		(void)fprintf(pidFile, "%d\n", getpid());
-		(void)fclose(pidFile);
-	}
-#endif
-
-	// Main loop
-#ifdef _WIN32
-	HANDLE waitSet[2];
-
-	waitSet[0] = exitRequested = CreateEventA(NULL, FALSE, FALSE, "ServerExit");
-	waitSet[1] = listener.createReadEvent();
-#else
-	struct pollfd pollSet[2] = { };
-
-	pollSet[0].fd = exitRequested.getOutput();
-	pollSet[0].events = POLLIN;
-
-	pollSet[1].fd = listener.createReadEvent();
-	pollSet[1].events = POLLIN;
-#endif
-
 	long timeoutMs = 0;
 	try { timeoutMs = std::stol(timeout); }
 	catch (const std::exception &e) { LOG_ERROR << "Failed to parse timeout: " << e.what(); }
 
-	auto endTime = timeoutMs >= 0 ? std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs) : std::chrono::steady_clock::time_point::max();
-
-	LOG_DEBUG << "Entering server connection listener loop";
-
-	for (;;)
+	if (listener.isValid() || timeoutMs)
 	{
-		auto remainingMs = std::chrono::duration_cast<std::chrono::milliseconds>(endTime -
-			(timeoutMs >= 0 ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point::max())).count();
-#ifdef _WIN32
-		auto waitMs = clampPositive(remainingMs, std::chrono::milliseconds::rep(INFINITE - 1));
-		DWORD waitResult = WaitForMultipleObjects(DWORD(sizeof(waitSet) / sizeof(waitSet[0]) - (listener.isValid() ? 0 : 1)), waitSet, FALSE, timeoutMs >= 0 ? DWORD(waitMs) : INFINITE);
+		auto endTime = timeoutMs >= 0 ? std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs) : std::chrono::steady_clock::time_point::max();
 
-		if (waitResult == WAIT_FAILED)
-			LOG_ERROR << "Failed to wait on multiple objects for new clients: " << GetLastError();
-		else if (waitResult == WAIT_OBJECT_0)
-			break;
-		else if (waitResult == WAIT_TIMEOUT)
-#else
-		auto waitMs = clampPositive(remainingMs, std::chrono::milliseconds::rep(unsigned(-1) >> 1));
-		int pollResult;
-
-		do pollResult = poll(pollSet, nfds_t(sizeof(pollSet) / sizeof(pollSet[0]) - (listener.isValid() ? 0 : 1)), timeoutMs >= 0 ? int(waitMs) : -1);
-		while (pollResult < 0 && (errno == EAGAIN || errno == EINTR));
-
-		if (pollResult < 0 || (pollSet[1].revents & POLLERR) != 0)
-			LOG_ERROR << "Failed to poll for new clients: " << errno;
-		else if ((pollSet[0].revents & (POLLIN | POLLHUP | POLLERR)) != 0)
-			break;
-		else if (pollResult == 0)
-#endif
+		// Daemonize, if desired
+		if (daemonize)
 		{
-			if (remainingMs <= waitMs)
-				break;
-			else
-				continue;
-		}
-
-		if (!listener.isValid())
-			continue;
-
-		k8psh::Socket client = listener.accept();
-
-		// Start the child thread / process
-		if (client.isValid())
-		{
-			LOG_DEBUG << "Accepted connection from new client";
 #ifdef _WIN32
-			std::thread(k8psh::Process::start, configuration.getWorkingDirectory(), *serverCommands, std::move(client)).detach();
+			LOG_ERROR << "Daemon not supported";
 #else
-			pid_t child = fork();
+			LOG_DEBUG << "Starting daemon";
 
-			if (child == 0)
+			switch (fork())
 			{
-				(void)close(listener.abandon());
-				signal(SIGCHLD, SIG_DFL);
-				k8psh::Process::start(configuration.getWorkingDirectory(), *serverCommands, std::move(client));
+			case 0:
+				break;
+
+			case -1:
+				LOG_ERROR << "Failed to fork daemon";
+
+			default:
 				return 0;
 			}
 
-			(void)close(client.abandon());
+			if (setsid() == -1)
+				return -1;
 
-			if (child == -1)
-				LOG_ERROR << "Failed to fork client: " << errno;
+			signal(SIGHUP, SIG_IGN);
+			signal(SIGCHLD, SIG_IGN);
+
+			(void)k8psh::Utilities::changeWorkingDirectory("/");
+			(void)umask(0);
+
+			int devNull = open("/dev/null", O_RDWR, 0);
+
+			if (devNull == -1)
+				LOG_ERROR << "Failed to open /dev/null for daemon";
+
+			(void)dup2(devNull, STDIN_FILENO);
+			(void)dup2(devNull, STDOUT_FILENO);
+			(void)dup2(devNull, STDERR_FILENO);
+			(void)close(devNull);
 #endif
 		}
-	}
+#ifndef _WIN32
+		else
+		{
+			signal(SIGHUP, handleSignal);
+			signal(SIGCHLD, SIG_IGN);
+		}
+#endif
 
-	LOG_DEBUG << "Shutting down the server";
+		signal(SIGTERM, handleSignal);
+		signal(SIGINT, handleSignal);
+
+#ifdef _WIN32
+		(void)SetConsoleCtrlHandler(handleCtrlC, TRUE);
+#else
+		// Create PID file
+		FILE *pidFile = pidFilename.empty() ? NULL : fopen(pidFilename.c_str(), "w");
+
+		if (pidFile)
+		{
+			(void)fprintf(pidFile, "%d\n", getpid());
+			(void)fclose(pidFile);
+		}
+		else if (!pidFilename.empty())
+			LOG_WARNING << "Failed to create PID file " << pidFilename;
+#endif
+
+		// Main loop
+#ifdef _WIN32
+		HANDLE waitSet[2];
+
+		waitSet[0] = exitRequested = CreateEventA(NULL, FALSE, FALSE, "ServerExit");
+		waitSet[1] = listener.createReadEvent();
+#else
+		struct pollfd pollSet[2] = { };
+
+		pollSet[0].fd = exitRequested.getOutput();
+		pollSet[0].events = POLLIN;
+
+		pollSet[1].fd = listener.createReadEvent();
+		pollSet[1].events = POLLIN;
+#endif
+
+		LOG_DEBUG << "Entering server connection listener loop";
+
+		for (;;)
+		{
+			auto remainingMs = std::chrono::duration_cast<std::chrono::milliseconds>(endTime -
+				(timeoutMs >= 0 ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point::max())).count();
+#ifdef _WIN32
+			auto waitMs = clampPositive(remainingMs, std::chrono::milliseconds::rep(INFINITE - 1));
+			DWORD waitResult = WaitForMultipleObjects(DWORD(sizeof(waitSet) / sizeof(waitSet[0]) - (listener.isValid() ? 0 : 1)), waitSet, FALSE, timeoutMs >= 0 ? DWORD(waitMs) : INFINITE);
+
+			if (waitResult == WAIT_FAILED)
+				LOG_ERROR << "Failed to wait on multiple objects for new clients: " << GetLastError();
+			else if (waitResult == WAIT_OBJECT_0)
+				break;
+			else if (waitResult == WAIT_TIMEOUT)
+#else
+			auto waitMs = clampPositive(remainingMs, std::chrono::milliseconds::rep(unsigned(-1) >> 1));
+			int pollResult;
+
+			do pollResult = poll(pollSet, nfds_t(sizeof(pollSet) / sizeof(pollSet[0]) - (listener.isValid() ? 0 : 1)), timeoutMs >= 0 ? int(waitMs) : -1);
+			while (pollResult < 0 && (errno == EAGAIN || errno == EINTR));
+
+			if (pollResult < 0 || (pollSet[1].revents & POLLERR) != 0)
+				LOG_ERROR << "Failed to poll for new clients: " << errno;
+			else if ((pollSet[0].revents & (POLLIN | POLLHUP | POLLERR)) != 0)
+				break;
+			else if (pollResult == 0)
+#endif
+			{
+				if (remainingMs <= waitMs)
+					break;
+				else
+					continue;
+			}
+
+			if (!listener.isValid())
+				continue;
+
+			k8psh::Socket client = listener.accept();
+
+			// Start the child thread / process
+			if (client.isValid())
+			{
+				LOG_DEBUG << "Accepted connection from new client";
+
+#ifdef _WIN32
+				std::thread(k8psh::Process::start, configuration.getBaseDirectory(), *serverCommands, std::move(client)).detach();
+#else
+				pid_t child = fork();
+
+				if (child == 0)
+				{
+					(void)close(listener.abandon());
+					signal(SIGCHLD, SIG_DFL);
+					k8psh::Process::start(configuration.getBaseDirectory(), *serverCommands, std::move(client));
+					return 0;
+				}
+
+				(void)close(client.abandon());
+
+				if (child == -1)
+					LOG_ERROR << "Failed to fork client: " << errno;
+#endif
+			}
+		}
+
+		LOG_DEBUG << "Shutting down the server";
 
 #ifndef _WIN32
-	// Remove PID file
-	if (pidFile && !k8psh::Utilities::deleteFile(pidFilename.c_str()))
-		LOG_WARNING << "Failed to remove pidfile " << pidFilename;
+		// Remove PID file
+		if (pidFile && !k8psh::Utilities::deleteFile(pidFilename.c_str()))
+			LOG_WARNING << "Failed to remove pidfile " << pidFilename;
 #endif
+	}
 
-	for (auto it = commands.begin(); it != commands.end(); ++it)
+	if (!disableClientExecutables && !keepClientExecutables)
 	{
-		if (!disableClientExecutables && (generateLocalExecutables || name != it->second.getHost().getHostname()) &&
+		for (auto it = commands.begin(); it != commands.end(); ++it)
+		{
+			if ((generateLocalExecutables || name != it->second.getHost().getHostname()) &&
 #ifdef _WIN32
-				!k8psh::Utilities::deleteFile(directory + it->second.getName() + ".exe")
+					!k8psh::Utilities::deleteFile(directory + it->second.getName() + ".exe")
 #else
-				!k8psh::Utilities::deleteFile(directory + it->second.getName())
+					!k8psh::Utilities::deleteFile(directory + it->second.getName())
 #endif
-				)
-			LOG_WARNING << "Failed to remove client executable for command " << it->second.getName();
+					)
+				LOG_WARNING << "Failed to remove client executable for command " << it->second.getName();
+		}
 	}
 
 	return 0;
