@@ -157,11 +157,11 @@ int k8psh::Process::runRemoteCommand(const std::string &workingDirectory, const 
 
 	for (auto it = command.getEnvironmentVariables().begin(); it != command.getEnvironmentVariables().end(); ++it)
 	{
-		const char first = (*it)[0];
+		const char first = it->first[0];
 
 		if (first != '=')
 		{
-			const std::string name = first == '?' ? it->substr(1) : *it;
+			const std::string name = first == '?' ? it->first.substr(1) : it->first;
 			const auto value = Utilities::getEnvironmentVariable(name);
 
 			if (value)
@@ -334,7 +334,8 @@ void k8psh::Process::start(const std::string &workingDirectory, const k8psh::Con
 	{
 		// Read all the data for the command to execute
 		std::string processDirectory;
-		std::unordered_map<std::string, std::string> environmentVariables;
+		std::unordered_map<std::string, std::string> receivedEnvironmentVariables;
+		std::unordered_map<std::string, OptionalString> environmentVariables;
 		std::vector<std::string> arguments;
 		std::string commandName;
 		std::vector<std::uint8_t> socketData;
@@ -362,12 +363,9 @@ void k8psh::Process::start(const std::string &workingDirectory, const k8psh::Con
 					std::size_t equals = environmentVariable.find("=");
 
 					if (equals == std::string::npos)
-						environmentVariables.emplace(std::make_pair(environmentVariable, Utilities::getEnvironmentVariable(environmentVariable)));
+						receivedEnvironmentVariables.emplace(std::make_pair(environmentVariable, Utilities::getEnvironmentVariable(environmentVariable)));
 					else
-					{
-						std::string newValue = Utilities::substituteEnvironmentVariables(environmentVariable.substr(equals + 1), environmentVariables);
-						environmentVariables[environmentVariable.substr(0, equals)] = std::move(newValue);
-					}
+						receivedEnvironmentVariables[environmentVariable.substr(0, equals)] = environmentVariable.substr(equals + 1);
 
 					break;
 				}
@@ -398,40 +396,37 @@ void k8psh::Process::start(const std::string &workingDirectory, const k8psh::Con
 
 		for (auto it = command.getEnvironmentVariables().begin(); it != command.getEnvironmentVariables().end(); ++it)
 		{
-			// Optional environment variable
-			if ((*it)[0] == '?')
-			{
-				const std::string name = it->substr(1);
-				auto valueIt = environmentVariables.find(name);
-
-				if (valueIt != environmentVariables.end())
-					environment.emplace_back(name + '=' + valueIt->second);
-				else
-				{
-					const auto value = Utilities::getEnvironmentVariable(name);
-
-					if (value)
-						environment.emplace_back(name + "=" + value);
-				}
-			}
-
 			// Inherited environment variable
-			else if ((*it)[0] == '=')
+			if (it->first[0] == '=')
 			{
-				const std::string name = it->substr(1);
-				const auto value = Utilities::getEnvironmentVariable(name);
-
-				if (value)
-					environment.emplace_back(name + "=" + value);
+				const std::string name = it->first.substr(1);
+				environmentVariables[name] = it->second.empty() ? Utilities::getEnvironmentVariable(name) : OptionalString(Utilities::substituteEnvironmentVariables(it->second, environmentVariables));
 			}
 
-			// Required environment variable
+			// User-provided environment variable
 			else
 			{
-				auto valueIt = environmentVariables.find(*it);
+				const bool isOptional = it->first[0] == '?';
+				const std::string name = isOptional ? it->first.substr(1) : it->first;
+				auto valueIt = receivedEnvironmentVariables.find(name);
 
-				if (valueIt != environmentVariables.end())
-					environment.emplace_back(*it + '=' + valueIt->second);
+				if (valueIt != receivedEnvironmentVariables.end())
+					environmentVariables[name] = valueIt->second;
+				else
+					environmentVariables[name] = it->second.empty() && isOptional ? Utilities::getEnvironmentVariable(environmentVariables, name) : OptionalString(Utilities::substituteEnvironmentVariables(it->second, environmentVariables));
+			}
+		}
+
+		// Build the environment strings, only allowing one for any key
+		for (auto it = command.getEnvironmentVariables().begin(); it != command.getEnvironmentVariables().end(); ++it)
+		{
+			const std::string name = it->first[0] == '=' || it->first[0] == '?' ? it->first.substr(1) : it->first;
+			auto valueIt = environmentVariables.find(name);
+
+			if (valueIt != environmentVariables.end() && valueIt->second)
+			{
+				environment.emplace_back(name + "=" + valueIt->second.c_str());
+				environmentVariables.erase(valueIt);
 			}
 		}
 
@@ -452,7 +447,7 @@ void k8psh::Process::start(const std::string &workingDirectory, const k8psh::Con
 			cmd.reserve(1024 * 32);
 
 			for (auto it = environment.begin(); it != environment.end(); ++it)
-				env.append(it->c_str()) += '\0';
+				env.append(*it) += '\0';
 
 			env += '\0';
 

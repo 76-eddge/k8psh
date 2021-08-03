@@ -126,7 +126,7 @@ bool k8psh::Logger::shouldLogDebug(const char *filename)
 
 k8psh::Logger::~Logger()
 {
-	static auto atomicWrite = [](std::FILE *stream, const std::string &content) { (void)std::fwrite(&content[0], content.length(), 1, stream); };
+	static auto atomicWrite = [](std::FILE *stream, const std::string &content) { return std::fwrite(&content[0], content.length(), 1, stream); };
 
 	std::string level5Chars;
 	std::ostringstream ss;
@@ -144,6 +144,7 @@ k8psh::Logger::~Logger()
 	switch (_level)
 	{
 	case LEVEL_DEBUG:   level5Chars = "DEBUG, "; break;
+	case LEVEL_INFO:    level5Chars = "INFO,  "; break;
 	case LEVEL_WARNING: level5Chars = "WARN,  "; break;
 	default:            level5Chars = "ERROR, "; break;
 	}
@@ -158,6 +159,11 @@ k8psh::Logger::~Logger()
 	{
 	case LEVEL_DEBUG:
 		ss << "(" << getDebugName(getFilename()) << ") " << message << std::endl;
+		atomicWrite(stdout, ss.str());
+		break;
+
+	case LEVEL_INFO:
+		ss << message << std::endl;
 		atomicWrite(stdout, ss.str());
 		break;
 
@@ -468,6 +474,17 @@ k8psh::OptionalString k8psh::Utilities::getEnvironmentVariable(const std::string
 	return OptionalString(getenv(name.c_str()));
 }
 
+// Gets either the override (if it exists) or the environment variable associated with the specified name.
+k8psh::OptionalString k8psh::Utilities::getEnvironmentVariable(const std::unordered_map<std::string, k8psh::OptionalString> &overrides, const std::string &name)
+{
+	auto it = overrides.find(name);
+
+	if (it != overrides.end() && it->second)
+		return it->second;
+
+	return getEnvironmentVariable(name);
+}
+
 // Gets the name of the host.
 std::string k8psh::Utilities::getHostname()
 {
@@ -631,24 +648,13 @@ bool k8psh::Utilities::setEnvironmentVariable(const std::string &name, const k8p
 #endif
 }
 
-// Gets either the override (if it exists) or the environment variable associated with the specified key.
-static k8psh::OptionalString getOverrideOrEnvironmentVariable(const std::unordered_map<std::string, std::string> &overrides, const std::string key)
-{
-	auto it = overrides.find(key);
-
-	if (it != overrides.end())
-		return it->second;
-
-	return k8psh::Utilities::getEnvironmentVariable(key);
-}
-
 /** Substitutes environment variables into the given string. Environment variables must take the form ${VAR:-default value} with the default value being optional.
  *
  * @param in the string to substitute environment variables into
  * @param overrides a map of overrides that will be used during the substitution
  * @return the string with the environment variable substitutions made
  */
-std::string k8psh::Utilities::substituteEnvironmentVariables(const std::string &in, const std::unordered_map<std::string, std::string> &overrides)
+std::string k8psh::Utilities::substituteEnvironmentVariables(const std::string &in, const std::unordered_map<std::string, k8psh::OptionalString> &overrides)
 {
 	static constexpr std::uint8_t VALID_ENV_NAME_CHARS[256] = {
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -671,9 +677,8 @@ std::string k8psh::Utilities::substituteEnvironmentVariables(const std::string &
 			return result;
 
 		at = dollar;
-		const std::size_t envNameOffset = i = dollar + 2;
 
-		for (; i < in.length(); i++)
+		for (const std::size_t envNameOffset = i = dollar + 2; i < in.length(); i++)
 		{
 			const unsigned char c = in[i];
 
@@ -696,7 +701,7 @@ std::string k8psh::Utilities::substituteEnvironmentVariables(const std::string &
 				}
 
 				std::string envName = in.substr(envNameOffset, i - dollar - 2);
-				const auto value = getOverrideOrEnvironmentVariable(overrides, envName);
+				const auto value = getEnvironmentVariable(overrides, envName);
 
 				if (value)
 					result.append(value);
@@ -711,7 +716,7 @@ std::string k8psh::Utilities::substituteEnvironmentVariables(const std::string &
 			else if (c == '}')
 			{
 				std::string envName = in.substr(envNameOffset, i - dollar - 2);
-				const auto value = getOverrideOrEnvironmentVariable(overrides, envName);
+				const auto value = getEnvironmentVariable(overrides, envName);
 
 				if (value)
 					result.append(value);

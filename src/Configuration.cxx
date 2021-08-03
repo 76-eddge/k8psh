@@ -3,6 +3,7 @@
 
 #include "Configuration.hxx"
 
+#include <unordered_map>
 #include <utility>
 
 #include "Utilities.hxx"
@@ -35,60 +36,65 @@ static char parseHexValue(char c)
 static std::size_t parseString(const std::string &configurationString, std::size_t offset, std::string &value, const char terminator = 0)
 {
 	const std::size_t start = offset;
+	std::size_t substituteStart = 0;
+	value.clear();
 
-	if (configurationString[offset] == '\'')
+	while (configurationString[offset] && !k8psh::Utilities::isWhitespace(configurationString[offset]) && configurationString[offset] != '#' && configurationString[offset] != terminator)
 	{
-		for (offset++; configurationString[offset] != '\'' || configurationString[++offset] == '\''; offset++)
+		if (configurationString[offset] == '\'')
 		{
-			if (!configurationString[offset])
-				LOG_ERROR << "Unterminated quoted string in configuration: " << configurationString.substr(start);
+			value.replace(substituteStart, value.length(), k8psh::Utilities::substituteEnvironmentVariables(value.substr(substituteStart)));
 
-			value += configurationString[offset];
-		}
-
-		return offset;
-	}
-	else if (configurationString[offset] == '\"')
-	{
-		for (offset++; configurationString[offset] != '\"' || configurationString[++offset] == '\"'; offset++)
-		{
-			if (!configurationString[offset])
-				LOG_ERROR << "Unterminated quoted string in configuration: " << configurationString.substr(start);
-			else if (configurationString[offset] != '\\')
-				value += configurationString[offset];
-			else
+			for (offset++; configurationString[offset] != '\'' || configurationString[++offset] == '\''; offset++)
 			{
-				switch (configurationString[++offset])
+				if (!configurationString[offset])
+					LOG_ERROR << "Unterminated quoted string in configuration: " << configurationString.substr(start);
+
+				value += configurationString[offset];
+			}
+
+			substituteStart = value.length();
+		}
+		else if (configurationString[offset] == '\"')
+		{
+			for (offset++; configurationString[offset] != '\"' || configurationString[++offset] == '\"'; offset++)
+			{
+				if (!configurationString[offset])
+					LOG_ERROR << "Unterminated double quoted string in configuration: " << configurationString.substr(start);
+				else if (configurationString[offset] != '\\')
+					value += configurationString[offset];
+				else
 				{
-					case '"': value += '"'; break;
-					case '\\': value += '\\'; break;
-					case '\'': value += '\''; break;
+					switch (configurationString[++offset])
+					{
+						case '"': value += '"'; break;
+						case '\\': value += '\\'; break;
+						case '\'': value += '\''; break;
 
-					case 'b': value += '\b'; break;
-					case 't': value += '\t'; break;
-					case 'n': value += '\n'; break;
-					case 'f': value += '\f'; break;
-					case 'r': value += '\r'; break;
-					case '0': value += '\0'; break;
+						case 'b': value += '\b'; break;
+						case 't': value += '\t'; break;
+						case 'n': value += '\n'; break;
+						case 'f': value += '\f'; break;
+						case 'r': value += '\r'; break;
+						case '0': value += '\0'; break;
 
-					case 'x':
-						value += (parseHexValue(configurationString[offset + 1]) << 4) + parseHexValue(configurationString[offset + 2]);
-						offset += 2;
-						break;
+						case 'x':
+							value += (parseHexValue(configurationString[offset + 1]) << 4) + parseHexValue(configurationString[offset + 2]);
+							offset += 2;
+							break;
 
-					default: LOG_ERROR << "Unrecognized escape sequence (\\" << configurationString[offset] << ") in string " << configurationString.substr(start, offset + 1 - start) << "...";
+						default: LOG_ERROR << "Unrecognized escape sequence (\\" << configurationString[offset] << ") in string " << configurationString.substr(start, offset + 1 - start) << "...";
+					}
 				}
 			}
 		}
-
-		value = k8psh::Utilities::substituteEnvironmentVariables(value);
-		return offset;
+		else
+			value += configurationString[offset++];
 	}
 
-	while (configurationString[offset] && !k8psh::Utilities::isWhitespace(configurationString[offset]) && configurationString[offset] != '#' && configurationString[offset] != terminator)
-		offset++;
+	value.replace(substituteStart, value.length(), k8psh::Utilities::substituteEnvironmentVariables(value.substr(substituteStart)));
+	LOG_DEBUG << "Parsed string: " << value;
 
-	value = k8psh::Utilities::substituteEnvironmentVariables(configurationString.substr(start, offset - start));
 	return offset;
 }
 
@@ -274,10 +280,12 @@ k8psh::Configuration k8psh::Configuration::load(const std::string &configuration
 
 			for (std::size_t j = 1; j < values.size(); j++)
 			{
-				if (!command._executable.empty() || values[j].empty() || values[j][values[j].length() - 1] != '=')
+				std::size_t equals;
+
+				if (!command._executable.empty() || values[j].empty() || (equals = values[j].find("=", 1)) == std::string::npos)
 					command._executable.emplace_back(std::move(values[j]));
 				else
-					command._environmentVariables.emplace_back(values[j].substr(0, values[j].length() - 1));
+					command._environmentVariables.emplace_back(std::make_pair(values[j].substr(0, equals), values[j].substr(equals + 1)));
 			}
 
 			if (command._executable.empty())

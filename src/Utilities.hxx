@@ -50,6 +50,7 @@ public:
 	enum Level
 	{
 		LEVEL_DEBUG,
+		LEVEL_INFO,
 		LEVEL_WARNING,
 		LEVEL_ERROR
 	};
@@ -82,6 +83,9 @@ struct NullStream
 
 	#define LOG_DEBUG while (false) ::k8psh::NullStream()
 #endif
+
+// Logs an informational message and continues. Example: `LOG_INFO << "Here's some data: " << a << ", " << b;`
+#define LOG_INFO ::k8psh::Logger(__FILE__, __LINE__, PREPROCESSOR_FUNCTION_IDENTIFIER, ::k8psh::Logger::LEVEL_INFO).getStream()
 
 // Logs a warning and continues. Example: `LOG_WARNING << "Something potentially unexpected occured";`
 #define LOG_WARNING ::k8psh::Logger(__FILE__, __LINE__, PREPROCESSOR_FUNCTION_IDENTIFIER, ::k8psh::Logger::LEVEL_WARNING).getStream()
@@ -188,8 +192,11 @@ public:
 	// Gets the full path of the current executable.
 	static std::string getExecutablePath();
 
-	// Gets the environment variable with the specified name. An empty string will be returned if the working directory could not be determined.
+	// Gets the environment variable with the specified name.
 	static OptionalString getEnvironmentVariable(const std::string &name);
+
+	// Gets either the override (if it exists) or the environment variable associated with the specified name.
+	static OptionalString getEnvironmentVariable(const std::unordered_map<std::string, OptionalString> &overrides, const std::string &name);
 
 	// Gets the name of the host.
 	static std::string getHostname();
@@ -235,7 +242,7 @@ public:
 	 * @param overrides a map of overrides that will be used during the substitution
 	 * @return the string with the environment variable substitutions made
 	 */
-	static std::string substituteEnvironmentVariables(const std::string &in, const std::unordered_map<std::string, std::string> &overrides = std::unordered_map<std::string, std::string>());
+	static std::string substituteEnvironmentVariables(const std::string &in, const std::unordered_map<std::string, OptionalString> &overrides = std::unordered_map<std::string, OptionalString>());
 };
 
 } // k8psh

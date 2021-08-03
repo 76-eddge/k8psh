@@ -42,7 +42,7 @@ public:
 		std::shared_ptr<Host> _host;
 		std::string _name;
 		std::vector<std::string> _executable;
-		std::vector<std::string> _environmentVariables;
+		std::vector<std::pair<std::string, std::string> > _environmentVariables;
 
 	public:
 		// Gets the host of the command.
@@ -55,7 +55,7 @@ public:
 		const std::vector<std::string> &getExecutable() const { return _executable; }
 
 		// Gets the environment variables used by the command.
-		const std::vector<std::string> &getEnvironmentVariables() const { return _environmentVariables; }
+		const std::vector<std::pair<std::string, std::string> > &getEnvironmentVariables() const { return _environmentVariables; }
 	};
 
 	typedef std::unordered_map<std::string, Command> CommandMap;

@@ -18,7 +18,7 @@
 
 static int runCommand(const std::string &command)
 {
-	std::cout << "Executing \"" << command << '"' << std::endl;
+	LOG_INFO << "Executing \"" << command << '"';
 
 #ifdef _WIN32
 	int exitCode = std::system(command.c_str());
@@ -50,7 +50,7 @@ static int runCommand(const std::string &command)
 	int exitCode = WEXITSTATUS(status);
 #endif
 
-	std::cout << "Command \"" << command << "\" returned " << exitCode << std::endl;
+	LOG_INFO << "Command \"" << command << "\" returned " << exitCode;
 	return exitCode;
 }
 
@@ -112,7 +112,7 @@ int main(int argc, const char *argv[])
 	std::ofstream configFile((basename + ".conf").c_str());
 
 	configFile << "baseDirectory = ." << std::endl;
-	configFile << "[k8pshTest]" << std::endl;
+	configFile << "[k8pshTest] --generate-local-executables --timeout 3000 ignoredConfigArg" << std::endl;
 	configFile << "'0_" << basename << "' K8PSH_TEST_NAME= PATH= '" << executable << "' 0" << std::endl;
 	configFile << "'1_" << basename << "' K8PSH_TEST_NAME= =PATH= '" << executable << "' 1" << std::endl;
 	configFile << "'2_" << basename << "' K8PSH_TEST_NAME= ?PATH= '" << executable << "' 2" << std::endl;
@@ -121,9 +121,9 @@ int main(int argc, const char *argv[])
 
 	// Start server
 	k8psh::Utilities::setEnvironmentVariable("K8PSH_CONFIG", basename + ".conf");
-	k8psh::Utilities::setEnvironmentVariable("K8PSH_DEBUG", "Main, Process");
+	k8psh::Utilities::setEnvironmentVariable("K8PSH_DEBUG", "Main, Configuration, Process");
 
-	std::thread([executable]{ (void)runCommand(executable + " --name k8pshTest --generate-local-executables --timeout 3000"); }).detach();
+	std::thread([executable]{ (void)runCommand(executable + " --name k8pshTest invalidArg"); }).detach();
 	std::this_thread::sleep_for(std::chrono::milliseconds(250));
 	k8psh::Utilities::setEnvironmentVariable("K8PSH_DEBUG");
 
