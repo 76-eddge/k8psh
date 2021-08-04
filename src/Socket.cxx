@@ -81,6 +81,24 @@ static k8psh::Socket::Handle createSocketHandle()
 	return handle;
 }
 
+#ifdef _WIN32
+	#define IF_WINSOCK(X, Y) X
+#else
+	#define IF_WINSOCK(X, Y) Y
+#endif
+
+// Sets the specified option on a socket
+template <typename OptionT, typename T> static bool setSocketOption(k8psh::Socket::Handle handle, int level, int name, const T &value)
+{
+	OptionT realValue = static_cast<OptionT>(value);
+
+#ifdef _WIN32
+	return setsockopt(handle, level, name, reinterpret_cast<const char *>(&realValue), int(sizeof(OptionT))) == 0;
+#else
+	return setsockopt(handle, level, name, &realValue, socklen_t(sizeof(OptionT))) == 0;
+#endif
+}
+
 // Creates a new server socket listening on the specified port.
 k8psh::Socket k8psh::Socket::listen(unsigned short port)
 {
@@ -95,6 +113,11 @@ k8psh::Socket k8psh::Socket::listen(unsigned short port)
 	addr[3] = 1;
 
 	LOG_DEBUG << "Binding to port " << port << " on socket " << socket._handle;
+
+#ifndef _WIN32
+	if (!setSocketOption<IF_WINSOCK(BOOL, int)>(socket._handle, SOL_SOCKET, SO_REUSEADDR, 1))
+		LOG_ERROR << "Failed to set SO_REUSEADDR socket option: " << getSocketErrorCode();
+#endif
 
 	if (::bind(socket._handle, reinterpret_cast<sockaddr *>(&ipv4), int(sizeof(ipv4))) != 0)
 		LOG_ERROR << "Failed to bind to port " << port << ": " << getSocketErrorCode();
