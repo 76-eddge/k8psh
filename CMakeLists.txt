@@ -45,6 +45,15 @@ elseif (NOT APPLE)
 endif ()
 
 # Create the server executable
+macro (add_link target link)
+  if (WIN32)
+    add_custom_command(TARGET ${target} POST_BUILD COMMAND cmd /c del ${link}.exe & mklink ${link}.exe ${target}.exe || mklink /h ${link}.exe ${target}.exe BYPRODUCTS ${link}.exe)
+    add_custom_target(${link} ALL DEPENDS ${target})
+  else ()
+    add_custom_command(TARGET ${target} POST_BUILD COMMAND ln -fs ${target} ${link} BYPRODUCTS ${link})
+  endif ()
+endmacro ()
+
 macro (install_link target link)
   if (WIN32)
     install(CODE "execute_process(COMMAND cmd /c del ${link}.exe & mklink ${link}.exe ${target}.exe || mklink /h ${link}.exe ${target}.exe WORKING_DIRECTORY \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/bin)")
@@ -54,6 +63,7 @@ macro (install_link target link)
   install(CODE "message(\"-- Created link: ${link} -> ${target}\")")
 endmacro ()
 
+add_link(k8psh k8pshd)
 install_link(k8psh k8pshd)
 
 # Add tests

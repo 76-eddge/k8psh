@@ -205,7 +205,7 @@ BOOL WINAPI handleCtrlC(DWORD)
 }
 #endif
 
-static const std::string defaultPidFilename = "/var/run/" + serverName + ".pid";
+static const std::string defaultPidFilename = "/run/" + serverName + ".pid";
 
 // The main() for the server that waits requests to run executables in the configuration
 static int mainServer(int argc, const char *argv[])
@@ -398,6 +398,9 @@ static int mainServer(int argc, const char *argv[])
 		}
 	}
 
+#ifndef _WIN32
+	int pidFile = -1;
+#endif
 	long timeoutMs = 0;
 	try { timeoutMs = std::stol(timeout); }
 	catch (const std::exception &e) { LOG_ERROR << "Failed to parse timeout: " << e.what(); }
@@ -423,7 +426,20 @@ static int mainServer(int argc, const char *argv[])
 				LOG_ERROR << "Failed to fork daemon";
 
 			default:
+				(void)close(listener.abandon());
 				return 0;
+			}
+
+			// Create PID file
+			if (!pidFilename.empty())
+			{
+				std::string pid = std::to_string(getpid()) + '\n';
+				pidFile = open(pidFilename.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0644);
+
+				if (pidFile < 0 || write(pidFile, &pid[0], pid.size()) != ssize_t(pid.size()))
+					LOG_ERROR << "Failed to write PID file " << pidFilename;
+
+				(void)close(pidFile);
 			}
 
 			if (setsid() == -1)
@@ -459,17 +475,6 @@ static int mainServer(int argc, const char *argv[])
 
 #ifdef _WIN32
 		(void)SetConsoleCtrlHandler(handleCtrlC, TRUE);
-#else
-		// Create PID file
-		FILE *pidFile = pidFilename.empty() ? NULL : fopen(pidFilename.c_str(), "w");
-
-		if (pidFile)
-		{
-			(void)fprintf(pidFile, "%d\n", getpid());
-			(void)fclose(pidFile);
-		}
-		else if (!pidFilename.empty())
-			LOG_WARNING << "Failed to create PID file " << pidFilename;
 #endif
 
 		// Main loop
@@ -558,8 +563,8 @@ static int mainServer(int argc, const char *argv[])
 
 #ifndef _WIN32
 		// Remove PID file
-		if (pidFile && !k8psh::Utilities::deleteFile(pidFilename.c_str()))
-			LOG_WARNING << "Failed to remove pidfile " << pidFilename;
+		if (pidFile >= 0 && !k8psh::Utilities::deleteFile(pidFilename.c_str()))
+			LOG_WARNING << "Failed to remove PID file " << pidFilename;
 #endif
 	}
 

@@ -20,7 +20,8 @@ jobs:
     - name: Build & Test
       run: |
         cmake -B build -DCMAKE_BUILD_TYPE=MinSizeRel -DCMAKE_INSTALL_PREFIX=. -G Ninja .
-        cmake --build build --target check install/strip
+        cmake --build build --target check k8pshd install/strip
+        build/k8pshd --background --config=k8psh_example.conf --name=gcc --pidfile=k8psh.pid && sleep 1 && kill -9 $(cat k8psh.pid)
 
   docker:
     runs-on: ubuntu-latest
