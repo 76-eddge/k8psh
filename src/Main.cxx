@@ -116,12 +116,12 @@ static int mainClient(int argc, const char *argv[])
 {
 	std::string commandName = getBaseCommandName(argv[0]);
 	k8psh::OptionalString config;
-	std::size_t i = 0;
+	std::size_t i = 1;
 
 	// Parse command line arguments
 	if (commandName == clientName)
 	{
-		for (i++; i < std::size_t(argc); i++)
+		for (; i < std::size_t(argc); i++)
 		{
 			std::string arg = argv[i];
 			LOG_DEBUG << "Parsing command line argument " << arg;
@@ -152,7 +152,7 @@ static int mainClient(int argc, const char *argv[])
 
 			else
 			{
-				commandName = argv[i];
+				commandName = argv[i++];
 				break;
 			}
 		}

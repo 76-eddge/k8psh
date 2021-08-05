@@ -436,13 +436,12 @@ std::string k8psh::Utilities::getBasename(const std::string &filename)
 	while (end > 1 && isPathSeparator(filename[end - 1]))
 		end--;
 
-	for (std::size_t i = end - 1; i > 0; i--)
-	{
-		if (isPathSeparator(filename[i - 1]))
-			return filename.substr(i, end - i);
-	}
+	std::size_t i = end - 1;
 
-	return filename.substr(0, end);
+	while (i > 0 && !isPathSeparator(filename[i - 1]))
+		i--;
+
+	return filename.substr(i, end - i);
 }
 
 // Gets the full path of the current executable.

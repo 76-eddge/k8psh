@@ -57,11 +57,7 @@ static int runCommand(const std::string &command)
 int main(int argc, const char *argv[])
 {
 	std::string executable = k8psh::Utilities::getExecutablePath();
-	std::string basename = k8psh::Utilities::getBasename(argv[0]);
-	std::size_t length = basename.length();
-
-	if (length >= 4 && basename.substr(length - 4) == ".exe")
-		basename.resize(length - 4);
+	std::string basename = getBaseCommandName(argv[0]);
 
 	// Check for test cases
 	if (argc > 1)

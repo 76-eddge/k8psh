@@ -149,7 +149,7 @@ int k8psh::Process::runRemoteCommand(const std::string &workingDirectory, const 
 	LOG_DEBUG << "Sending working directory (\"" << workingDirectory << "\") to server";
 	sendSocketPayloadString(socket, WORKING_DIRECTORY, workingDirectory);
 
-	for (std::size_t i = 1; i < argc; i++)
+	for (std::size_t i = 0; i < argc; i++)
 	{
 		LOG_DEBUG << "Sending argument (\"" << argv[i] << "\") to server";
 		sendSocketPayloadString(socket, COMMAND_ARGUMENT, argv[i]);
@@ -172,8 +172,8 @@ int k8psh::Process::runRemoteCommand(const std::string &workingDirectory, const 
 		}
 	}
 
-	LOG_DEBUG << "Sending start command (\"" << argv[0] << "\") to server";
-	sendSocketPayloadString(socket, START_COMMAND, argv[0]);
+	LOG_DEBUG << "Sending start command (\"" << command.getName() << "\") to server";
+	sendSocketPayloadString(socket, START_COMMAND, command.getName());
 
 	// Process stdin, socket data, and wait for exit code
 #ifdef _WIN32

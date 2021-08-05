@@ -36,6 +36,9 @@ int main()
 	TEST_THAT(k8psh::Utilities::getBasename("///") == "/");
 	TEST_THAT(k8psh::Utilities::getBasename("//usr//lib//") == "lib");
 	TEST_THAT(k8psh::Utilities::getBasename("") == ".");
+	TEST_THAT(k8psh::Utilities::getBasename("./bin/") == "bin");
+	TEST_THAT(k8psh::Utilities::getBasename("./bin/k8psh") == "k8psh");
+	TEST_THAT(k8psh::Utilities::getBasename("./k8psh") == "k8psh");
 
 	// Relativize
 	TEST_THAT(k8psh::Utilities::relativize("/blah//blah2//", "/blah/blah2/blah3") == "blah3");
