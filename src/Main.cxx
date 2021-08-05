@@ -38,18 +38,6 @@ static const std::string version = QUOTE(GIT_VERSION);
 static const std::string version = "???";
 #endif
 
-// Gets the base name of the command.
-static std::string getBaseCommandName(const char *command)
-{
-#ifdef _WIN32
-	std::string name = k8psh::Utilities::getBasename(command);
-
-	return (name.length() < 4 || name.compare(name.length() - 4, 4, ".exe") != 0) ? name : name.substr(0, name.length() - 4);
-#else
-	return k8psh::Utilities::getBasename(command);
-#endif
-}
-
 // Gets the configuration.
 static k8psh::Configuration getConfiguration(const k8psh::OptionalString &config)
 {
@@ -114,7 +102,7 @@ template <typename ArgListT> static bool parseOption(const std::string &argument
 // The main() for connecting to the server and starting the process
 static int mainClient(int argc, const char *argv[])
 {
-	std::string commandName = getBaseCommandName(argv[0]);
+	std::string commandName = k8psh::Utilities::getExecutableBasename(argv[0]);
 	k8psh::OptionalString config;
 	std::size_t i = 1;
 
@@ -211,16 +199,18 @@ static const std::string defaultPidFilename = "/run/" + serverName + ".pid";
 static int mainServer(int argc, const char *argv[])
 {
 	k8psh::Socket::Initializer socketInit;
-	std::string commandName = getBaseCommandName(argv[0]);
+	std::string commandName = k8psh::Utilities::getExecutableBasename(argv[0]);
 	std::vector<std::string> deferredArgs;
 	bool daemonize = false;
 	bool disableClientExecutables = false;
 	bool generateLocalExecutables = false;
+	bool ignoreInvalidArguments = false;
 	bool keepClientExecutables = false;
 	bool overwriteClientExecutables = false;
 	k8psh::OptionalString config;
 	std::string directory;
 	std::string name;
+	std::string connections = "-1";
 	std::string pidFilename = defaultPidFilename;
 	std::string timeout = "-1";
 
@@ -236,24 +226,15 @@ static int mainServer(int argc, const char *argv[])
 				arg == "-l" || arg == "--generate-local-executables" ||
 				arg == "-o" || arg == "--overwrite-client-executables")
 			deferredArgs.emplace_back(arg);
-
 		else if (parseOption(arg, "-e", "--executable-directory", "[directory]", i, argc, argv, directory, &deferredArgs) ||
+				parseOption(arg, "-m", "--max-connections", "[connections]", i, argc, argv, connections, &deferredArgs) ||
 				parseOption(arg, "-p", "--pidfile", "[file]", i, argc, argv, pidFilename, &deferredArgs) ||
 				parseOption(arg, "-t", "--timeout", "[ms]", i, argc, argv, timeout, &deferredArgs))
 			; // Option recognized and parsed
-
-		else if (arg == "-v" || arg == "--version")
-		{
-			std::cout << commandName << ' ' << version << std::endl;
-			return 0;
-		}
-
 		else if (parseOption(arg, "-c", "--config", "[file]", i, argc, argv, config))
 			config.exists();
-
 		else if (parseOption(arg, "-n", "--name", "[name]", i, argc, argv, name))
 			; // Option recognized and parsed
-
 		else if (arg == "-h" || arg == "--help")
 		{
 			std::cout << "Usage: " << commandName << " [options]" << std::endl;
@@ -270,10 +251,14 @@ static int mainServer(int argc, const char *argv[])
 			std::cout << "      The directory used to create the client executables." << std::endl;
 			std::cout << "  -h, --help" << std::endl;
 			std::cout << "      Displays usage and exits." << std::endl;
+			std::cout << "  -i, --ignore-invalid-arguments" << std::endl;
+			std::cout << "      Invalid arguments will generate a warning rather than an error." << std::endl;
 			std::cout << "  -k, --keep-client-executables" << std::endl;
 			std::cout << "      Keeps client executables instead of removing them on exit." << std::endl;
 			std::cout << "  -l, --generate-local-executables" << std::endl;
 			std::cout << "      Generate client executables for local executables." << std::endl;
+			std::cout << "  -m, --max-connections [connections]" << std::endl;
+			std::cout << "      The maximum number of connections to accept before the server exits. Defaults to -1 (no limit)." << std::endl;
 			std::cout << "  -n, --name [name]" << std::endl;
 			std::cout << "      The name used to identify the server. Defaults to $" << environmentPrefix << "NAME or hostname." << std::endl;
 			std::cout << "  -o, --overwrite-client-executables" << std::endl;
@@ -281,14 +266,22 @@ static int mainServer(int argc, const char *argv[])
 			std::cout << "  -p, --pidfile [file]" << std::endl;
 			std::cout << "      The file to store the PID of the server. Defaults to " << defaultPidFilename << " for server." << std::endl;
 			std::cout << "  -t, --timeout [ms]" << std::endl;
-			std::cout << "      The time in milliseconds before the server exits. Defaults to -1 (run forever) for server, 0 for client" << std::endl;
+			std::cout << "      The time in milliseconds before the server exits. Defaults to -1 (run forever) for server, 0 for client." << std::endl;
 			std::cout << "  -v, --version" << std::endl;
 			std::cout << "      Prints the version and exits." << std::endl;
 			return 0;
 		}
-
+		else if (arg == "-i" || arg == "--ignore-invalid-arguments")
+			ignoreInvalidArguments = true;
+		else if (arg == "-v" || arg == "--version")
+		{
+			std::cout << commandName << ' ' << version << std::endl;
+			return 0;
+		}
+		else if (ignoreInvalidArguments)
+			LOG_WARNING << "Ignoring unrecognized argument " << arg;
 		else
-			LOG_WARNING << "Ignoring unrecognized option " << arg;
+			LOG_ERROR << "Invalid argument " << arg;
 	}
 
 	// Check name
@@ -338,28 +331,26 @@ static int mainServer(int argc, const char *argv[])
 
 		if (arg == "-b" || arg == "--background")
 			daemonize = true;
-
 		else if (arg == "-d" || arg == "--disable-client-executables")
 			disableClientExecutables = true;
-
-		else if (arg == "-k" || arg == "--keep-client-executables")
-			keepClientExecutables = true;
-
-		else if (arg == "-l" || arg == "--generate-local-executables")
-			generateLocalExecutables = true;
-
-		else if (arg == "-o" || arg == "--overwrite-client-executables")
-			overwriteClientExecutables = true;
-
 		else if (parseOption(arg, "-e", "--executable-directory", "[directory]", i, deferredArgc, deferredArgs, directory))
 			directory += '/';
-
-		else if (parseOption(arg, "-p", "--pidfile", "[file]", i, deferredArgc, deferredArgs, pidFilename) ||
+		else if (arg == "-i" || arg == "--ignore-invalid-arguments")
+			ignoreInvalidArguments = true;
+		else if (arg == "-k" || arg == "--keep-client-executables")
+			keepClientExecutables = true;
+		else if (arg == "-l" || arg == "--generate-local-executables")
+			generateLocalExecutables = true;
+		else if (parseOption(arg, "-m", "--max-connections", "[connections]", i, deferredArgc, deferredArgs, connections) ||
+				parseOption(arg, "-p", "--pidfile", "[file]", i, deferredArgc, deferredArgs, pidFilename) ||
 				parseOption(arg, "-t", "--timeout", "[ms]", i, deferredArgc, deferredArgs, timeout))
 			; // Option recognized and parsed
-
+		else if (arg == "-o" || arg == "--overwrite-client-executables")
+			overwriteClientExecutables = true;
+		else if (ignoreInvalidArguments)
+			LOG_WARNING << "Ignoring unrecognized argument " << arg;
 		else
-			LOG_WARNING << "Ignoring unrecognized option " << arg;
+			LOG_ERROR << "Invalid argument " << arg;
 
 		// Update limit to full size after processing all arguments from config file
 		if (i + 1 >= deferredArgc)
@@ -381,28 +372,34 @@ static int mainServer(int argc, const char *argv[])
 		if (disableClientExecutables || overwriteClientExecutables)
 			(void)k8psh::Utilities::deleteFile(filename.c_str());
 
-		if (!disableClientExecutables && (generateLocalExecutables || name != it->second.getHost().getHostname()))
-		{
+		if (disableClientExecutables || (!generateLocalExecutables && name == it->second.getHost().getHostname()))
+			continue;
+
 #ifdef _WIN32
-			// Attempt to link or copy executable (hardlinks can't be deleted while in use, so don't hardlink to executable otherwise overwrite client executables option will fail)
-			if (CreateSymbolicLinkA(filename.c_str(), clientCommand.c_str(), SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0 ||
-					(it != commands.begin() && CreateHardLinkA(filename.c_str(), clientCommand.c_str(), NULL) != 0))
-				continue; // Successfully linked
-			else if (CopyFileA(clientCommand.c_str(), filename.c_str(), overwriteClientExecutables ? FALSE : TRUE) != 0)
-				clientCommand = filename; // Try to link to copied file from now on
-			else
+		// Attempt to link or copy executable (hardlinks can't be deleted while in use, so don't hardlink to executable otherwise overwrite client executables option will fail)
+		if (CreateSymbolicLinkA(filename.c_str(), clientCommand.c_str(), SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0 ||
+				(it != commands.begin() && CreateHardLinkA(filename.c_str(), clientCommand.c_str(), NULL) != 0))
+			continue; // Successfully linked
+		else if (CopyFileA(clientCommand.c_str(), filename.c_str(), overwriteClientExecutables ? FALSE : TRUE) != 0)
+			clientCommand = filename; // Try to link to copied file from now on
+		else
 #else
-			if (symlink(clientCommand.c_str(), filename.c_str()) != 0)
+		if (symlink(clientCommand.c_str(), filename.c_str()) != 0)
 #endif
-				LOG_ERROR << "Failed to create client executable for command " << it->second.getName();
-		}
+			LOG_ERROR << "Failed to create client executable for command " << it->second.getName();
 	}
 
 #ifndef _WIN32
 	int pidFile = -1;
 #endif
-	long timeoutMs = 0;
-	try { timeoutMs = std::stol(timeout); }
+	long long connectionCount = 0;
+	long long maxConnections = 0;
+	long long timeoutMs = 0;
+
+	try { maxConnections = std::stoll(connections); }
+	catch (const std::exception &e) { LOG_ERROR << "Failed to parse max connections: " << e.what(); }
+
+	try { timeoutMs = std::stoll(timeout); }
 	catch (const std::exception &e) { LOG_ERROR << "Failed to parse timeout: " << e.what(); }
 
 	if (listener.isValid() || timeoutMs)
@@ -480,6 +477,7 @@ static int mainServer(int argc, const char *argv[])
 		// Main loop
 #ifdef _WIN32
 		HANDLE waitSet[2];
+		std::thread clientThread;
 
 		waitSet[0] = exitRequested = CreateEventA(NULL, FALSE, FALSE, "ServerExit");
 		waitSet[1] = listener.createReadEvent();
@@ -495,7 +493,7 @@ static int mainServer(int argc, const char *argv[])
 
 		LOG_DEBUG << "Entering server connection listener loop";
 
-		for (;;)
+		while (connectionCount < maxConnections || maxConnections < 0)
 		{
 			auto remainingMs = std::chrono::duration_cast<std::chrono::milliseconds>(endTime -
 				(timeoutMs >= 0 ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point::max())).count();
@@ -539,7 +537,12 @@ static int mainServer(int argc, const char *argv[])
 				LOG_DEBUG << "Accepted connection from new client";
 
 #ifdef _WIN32
-				std::thread(k8psh::Process::start, configuration.getBaseDirectory(), *serverCommands, std::move(client)).detach();
+				clientThread = std::thread([chainedThread { std::move(clientThread) }, configuration, serverCommands, client { std::move(client) }]() mutable {
+					k8psh::Process::start(configuration.getBaseDirectory(), *serverCommands, std::move(client));
+
+					if (chainedThread.joinable())
+						chainedThread.join();
+				});
 #else
 				pid_t child = fork();
 
@@ -556,12 +559,17 @@ static int mainServer(int argc, const char *argv[])
 				if (child == -1)
 					LOG_ERROR << "Failed to fork client: " << errno;
 #endif
+
+				connectionCount++;
 			}
 		}
 
-		LOG_DEBUG << "Shutting down the server";
+		LOG_DEBUG << "Shutting down the server, handled " << connectionCount << " connection(s)";
 
-#ifndef _WIN32
+#ifdef _WIN32
+		if (clientThread.joinable())
+			clientThread.join();
+#else
 		// Remove PID file
 		if (pidFile >= 0 && !k8psh::Utilities::deleteFile(pidFilename.c_str()))
 			LOG_WARNING << "Failed to remove PID file " << pidFilename;
@@ -572,13 +580,20 @@ static int mainServer(int argc, const char *argv[])
 	{
 		for (auto it = commands.begin(); it != commands.end(); ++it)
 		{
-			if ((generateLocalExecutables || name != it->second.getHost().getHostname()) &&
+			if (!generateLocalExecutables && name == it->second.getHost().getHostname())
+				continue;
+
 #ifdef _WIN32
-					!k8psh::Utilities::deleteFile(directory + it->second.getName() + ".exe")
+			// Hardlinks are used on Windows, so give additional time to the client processes to complete so that the executables can be deleted
+			int attemptsRemaining = (it == commands.begin() ? 8 : 1);
+
+			while (!k8psh::Utilities::deleteFile(directory + it->second.getName() + ".exe") && --attemptsRemaining)
+				Sleep(16);
+
+			if (!attemptsRemaining)
 #else
-					!k8psh::Utilities::deleteFile(directory + it->second.getName())
+			if (!k8psh::Utilities::deleteFile(directory + it->second.getName()))
 #endif
-					)
 				LOG_WARNING << "Failed to remove client executable for command " << it->second.getName();
 		}
 	}
@@ -588,7 +603,7 @@ static int mainServer(int argc, const char *argv[])
 
 int main(int argc, const char *argv[])
 {
-	std::string commandName = getBaseCommandName(argv[0]);
+	std::string commandName = k8psh::Utilities::getExecutableBasename(argv[0]);
 
 	if (commandName == serverName)
 		return mainServer(argc, argv);

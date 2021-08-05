@@ -173,6 +173,12 @@ class Utilities
 	Utilities();
 
 public:
+#ifdef _WIN32
+	static const char PATH_SEPARATOR = '\\';
+#else
+	static const char PATH_SEPARATOR = '/';
+#endif
+
 	/** Changes the working directory of the process.
 	 *
 	 * @param directory the new working directory of the process, which can be relative to the current working directory or absolute
@@ -189,6 +195,9 @@ public:
 	// Gets the basename of the file.
 	static std::string getBasename(const std::string &filename);
 
+	// Gets the basename of an executable file, removing the extension.
+	static std::string getExecutableBasename(const std::string &filename);
+
 	// Gets the full path of the current executable.
 	static std::string getExecutablePath();
 
@@ -200,6 +209,9 @@ public:
 
 	// Gets the name of the host.
 	static std::string getHostname();
+
+	// Gets the path separator.
+	static std::string getPathSeparator() { return std::string(1, PATH_SEPARATOR); }
 
 	// Gets the parent directory of the file.
 	static std::string getParentDirectory(const std::string &filename);

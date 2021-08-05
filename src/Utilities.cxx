@@ -444,6 +444,18 @@ std::string k8psh::Utilities::getBasename(const std::string &filename)
 	return filename.substr(i, end - i);
 }
 
+// Gets the basename of an executable file, removing the extension.
+std::string k8psh::Utilities::getExecutableBasename(const std::string &filename)
+{
+#ifdef _WIN32
+	std::string name = getBasename(filename);
+
+	return (name.length() < 4 || name.compare(name.length() - 4, 4, ".exe") != 0) ? name : name.substr(0, name.length() - 4);
+#else
+	return getBasename(filename);
+#endif
+}
+
 // Gets the full path of the current executable.
 std::string k8psh::Utilities::getExecutablePath()
 {

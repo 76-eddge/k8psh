@@ -57,7 +57,7 @@ static int runCommand(const std::string &command)
 int main(int argc, const char *argv[])
 {
 	std::string executable = k8psh::Utilities::getExecutablePath();
-	std::string basename = getBaseCommandName(argv[0]);
+	std::string basename = k8psh::Utilities::getExecutableBasename(argv[0]);
 
 	// Check for test cases
 	if (argc > 1)
@@ -108,7 +108,7 @@ int main(int argc, const char *argv[])
 	std::ofstream configFile((basename + ".conf").c_str());
 
 	configFile << "baseDirectory = ." << std::endl;
-	configFile << "[k8pshTest] --generate-local-executables --timeout 3000 ignoredConfigArg" << std::endl;
+	configFile << "[k8pshTest] --generate-local-executables --max-connections 4 --timeout 8000 --ignore-invalid-arguments ignoredConfigArg" << std::endl;
 	configFile << "'0_" << basename << "' K8PSH_TEST_NAME= PATH= '" << executable << "' 0" << std::endl;
 	configFile << "'1_" << basename << "' K8PSH_TEST_NAME= =PATH= '" << executable << "' 1" << std::endl;
 	configFile << "'2_" << basename << "' K8PSH_TEST_NAME= ?PATH= '" << executable << "' 2" << std::endl;
@@ -119,14 +119,14 @@ int main(int argc, const char *argv[])
 	k8psh::Utilities::setEnvironmentVariable("K8PSH_CONFIG", basename + ".conf");
 	k8psh::Utilities::setEnvironmentVariable("K8PSH_DEBUG", "Main, Configuration, Process");
 
-	std::thread([executable]{ (void)runCommand(executable + " --name k8pshTest invalidArg"); }).detach();
+	std::thread([executable]{ (void)runCommand(executable + " --name k8pshTest"); }).detach();
 	std::this_thread::sleep_for(std::chrono::milliseconds(250));
 	k8psh::Utilities::setEnvironmentVariable("K8PSH_DEBUG");
 
 	// Run test cases
 	TEST_THAT(k8psh::Utilities::setEnvironmentVariable("PATH", "."));
 	TEST_THAT(k8psh::Utilities::setEnvironmentVariable("K8PSH_TEST_NAME", "Test 0"));
-	TEST_THAT(runCommand("0_" + basename + " > test.out 2> test.err") == 0);
+	TEST_THAT(runCommand("." + k8psh::Utilities::getPathSeparator() + "0_" + basename + " > test.out 2> test.err") == 0);
 	TEST_THAT(k8psh::Utilities::readFile("test.out") == static_cast<const std::ostringstream &>(std::ostringstream() << "Test 0").str());
 	TEST_THAT(k8psh::Utilities::readFile("test.err").empty());
 
