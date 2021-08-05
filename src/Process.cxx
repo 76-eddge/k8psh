@@ -3,10 +3,12 @@
 
 #include "Process.hxx"
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <iostream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -16,7 +18,6 @@
 #ifdef _WIN32
 	#include <condition_variable>
 	#include <mutex>
-	#include <thread>
 
 	#include <fcntl.h>
 	#include <io.h>
@@ -134,16 +135,35 @@ static void sendSocketPayloadString(k8psh::Socket &socket, PayloadType type, con
  * @param command the command to start
  * @param argc the number of additional arguments used to start the process
  * @param argv additional arguments used to start the process
+ * @param configuration the global configuration
  * @return the exit code of the process
  */
-int k8psh::Process::runRemoteCommand(const std::string &workingDirectory, const k8psh::Configuration::Command &command, std::size_t argc, const char *argv[])
+int k8psh::Process::runRemoteCommand(const std::string &workingDirectory, const k8psh::Configuration::Command &command, std::size_t argc, const char *argv[], const k8psh::Configuration &configuration)
 {
 	k8psh::Socket::Initializer socketInit;
+	auto endTime = configuration.getConnectTimeoutMs() >= 0 ? std::chrono::steady_clock::now() + std::chrono::milliseconds(configuration.getConnectTimeoutMs()) : std::chrono::steady_clock::time_point::max();
+	std::chrono::milliseconds backoff = std::chrono::milliseconds(16);
 	Socket socket;
 
 	// Connect to the server
-	while (!socket.isValid())
-		socket = Socket::connect(command.getHost().getPort());
+	while (!(socket = Socket::connect(command.getHost().getPort(), false)).isValid())
+	{
+		auto now = std::chrono::steady_clock::now();
+
+		if (now >= endTime)
+			break;
+
+		backoff = backoff * 2;
+
+		if (backoff > std::chrono::milliseconds(1000))
+			backoff = std::chrono::milliseconds(1000);
+
+		auto sleepUntil = now + backoff;
+		std::this_thread::sleep_until(sleepUntil < endTime ? sleepUntil : endTime);
+	}
+
+	if (!socket.isValid())
+		LOG_ERROR << "Failed to connect to server after " << configuration.getConnectTimeoutMs() << "ms";
 
 	// Build the process information (working directory, environment variables, command line)
 	LOG_DEBUG << "Sending working directory (\"" << workingDirectory << "\") to server";

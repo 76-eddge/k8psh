@@ -57,7 +57,7 @@ public:
 	static Socket listen(unsigned short port);
 
 	// Creates a new socket by connecting to the specified port. This call may return an invalid socket if a recoverable error is encountered.
-	static Socket connect(unsigned short port);
+	static Socket connect(unsigned short port, bool failOnError = true);
 
 	Socket() : _handle(INVALID_HANDLE) { }
 #ifdef _WIN32

@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: server
+        image: alpine
+        args: [ /bin/sh, -c, '/workspace-server/bin/k8pshd --config=/workspace-server/test/config/k8s.conf --name=server --max-connections=3' ]
+        env:
+        - name: K8PSH_DEBUG # To debug, modify the Dockerfile to have cmake create a debug build
+          value: 'Process, Main, Configuration'
+        - name: K8PSH_TEST
+          value: 'ServerTest'
+        resources:
+          requests:
+            memory: 100Mi
+            cpu: 100m
+        volumeMounts:
+        - mountPath: /workspace-server
+          name: workspace
+      - name: client
+        image: ubuntu
+        tty: true
+        args: [ /bin/sh, -c, 'cd /workspace/test && /workspace/bin/k8pshd --keep-client-executables && uname -a && printenv K8PSH_TEST && pwd && ./uname -a && ./printenv K8PSH_TEST && ./pwd' ]
+        env:
+        - name: K8PSH_CONFIG
+          value: /workspace/test/config/k8s.conf
+        - name: K8PSH_DEBUG # To debug, modify the Dockerfile to have cmake create a debug build
+          value: 'Process, Main, Configuration'
+        - name: K8PSH_TEST
+          value: 'ClientTest'
+        resources:
+          requests:
+            memory: 100Mi
+            cpu: 100m
+        volumeMounts:
+        - mountPath: /workspace
+          name: workspace
+      volumes:
+      - name: workspace
+        hostPath:
+          path: "${GITHUB_WORKSPACE}"
+          type: Directory

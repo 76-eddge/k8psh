@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #ifdef _WIN32
 	#include <direct.h>
@@ -576,6 +577,70 @@ bool k8psh::Utilities::isAbsolutePath(const std::string &filename)
 	return false;
 }
 
+// Normalizes a path
+std::string k8psh::Utilities::normalizePath(const std::string &path)
+{
+	std::string newPath;
+	std::vector<std::size_t> directories;
+	std::size_t i = 0;
+	bool isAbsolute = false;
+
+	// If the path is absolute then start the new path the same
+	if (isAbsolutePath(path))
+	{
+#ifdef _WIN32
+		newPath = path.substr(0, 2) + PATH_SEPARATOR;
+		i = 2;
+#else
+		newPath += PATH_SEPARATOR;
+		i = 1;
+#endif
+		isAbsolute = true;
+	}
+
+	// Append all the directories, ignoring './' and removing parents for '../'
+	for (;;)
+	{
+		// Find the start and end of the directory
+		while (isPathSeparator(path[i]))
+			i++;
+
+		if (!path[i])
+			break;
+
+		std::size_t start = i;
+
+		while (path[i] && !isPathSeparator(path[i]))
+			i++;
+
+		// Process the directory
+		if (i - start == 1 && path[start] == '.')
+			; // Ignore './'
+		else if (!(i - start == 2 && path[start] == '.' && path[start + 1] == '.'))
+		{
+			directories.push_back(newPath.length());
+
+			if (directories.size() > 1)
+				newPath += PATH_SEPARATOR;
+
+			newPath += path.substr(start, i - start);
+		}
+		else if (!directories.empty()) // Handle remaining cases for '../'
+		{
+			newPath.erase(directories.back());
+			directories.pop_back();
+		}
+		else if (isAbsolute)
+			; // Ignore '../' when the path is absolute and no directories
+		else if (newPath.empty())
+			newPath += "..";
+		else
+			(newPath += PATH_SEPARATOR) += "..";
+	}
+
+	return newPath;
+}
+
 /** Gets the contents of a file.
  *
  * @param filename the name of the file
@@ -603,13 +668,13 @@ k8psh::OptionalString k8psh::Utilities::readFile(const std::string &filename)
 	return contents;
 }
 
-/** Relativizes the path based on the parent.
+/** Relativizes a path based on the parent. Note that paths are not automatically normalized.
  *
  * @param parent the parent directory used to relativize the path
  * @param path the path to relativize
  * @return the relativized path
  */
-std::string k8psh::Utilities::relativize(const std::string &parent, const std::string &path)
+std::string k8psh::Utilities::relativizePath(const std::string &parent, const std::string &path)
 {
 	std::size_t i = 0, j = 0;
 

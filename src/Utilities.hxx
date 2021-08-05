@@ -225,6 +225,9 @@ public:
 	// Checks if the character is a whitespace character.
 	static bool isWhitespace(char c) { return (c >= 9 && c <= 13) || c == ' '; }
 
+	// Normalizes a path
+	static std::string normalizePath(const std::string &path);
+
 	/** Gets the contents of a file.
 	 *
 	 * @param filename the name of the file
@@ -232,13 +235,13 @@ public:
 	 */
 	static OptionalString readFile(const std::string &filename);
 
-	/** Relativizes the path based on the parent.
+	/** Relativizes a path based on the parent. Note that paths are not automatically normalized.
 	 *
 	 * @param parent the parent directory used to relativize the path
 	 * @param path the path to relativize
 	 * @return the relativized path
 	 */
-	static std::string relativize(const std::string &parent, const std::string &path);
+	static std::string relativizePath(const std::string &parent, const std::string &path);
 
 	/** Sets the environment variable with the specified name to the specified value.
 	 *

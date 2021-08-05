@@ -63,6 +63,7 @@ public:
 
 private:
 	std::string _baseDirectory;
+	long long _connectTimeoutMs;
 	HostCommandsMap _hostCommands;
 	CommandMap _commands;
 
@@ -81,6 +82,9 @@ public:
 
 	// Gets all commands from the configuration.
 	const CommandMap &getCommands() const { return _commands; }
+
+	// Gets the timeout in milliseconds before failing to connect to the server.
+	long long getConnectTimeoutMs() const { return _connectTimeoutMs; }
 
 	// Gets the base directory for the configuration.
 	const std::string &getBaseDirectory() const { return _baseDirectory; }

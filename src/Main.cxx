@@ -4,6 +4,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -17,6 +18,7 @@
 	#include <poll.h>
 	#include <signal.h>
 	#include <sys/stat.h>
+	#include <sys/wait.h>
 	#include <unistd.h>
 #endif
 
@@ -114,15 +116,8 @@ static int mainClient(int argc, const char *argv[])
 			std::string arg = argv[i];
 			LOG_DEBUG << "Parsing command line argument " << arg;
 
-			if (arg == "-v" || arg == "--version")
-			{
-				std::cout << commandName << ' ' << version << std::endl;
-				return 0;
-			}
-
-			else if (parseOption(arg, "-c", "--config", "[config]", i, argc, argv, config))
+			if (parseOption(arg, "-c", "--config", "[config]", i, argc, argv, config))
 				config.exists();
-
 			else if (arg == "-h" || arg == "--help")
 			{
 				std::cout << "Usage: " << commandName << " [options] command..." << std::endl;
@@ -137,7 +132,11 @@ static int mainClient(int argc, const char *argv[])
 				std::cout << "      Prints the version and exits." << std::endl;
 				return 0;
 			}
-
+			else if (arg == "-v" || arg == "--version")
+			{
+				std::cout << commandName << ' ' << version << std::endl;
+				return 0;
+			}
 			else
 			{
 				commandName = argv[i++];
@@ -154,7 +153,7 @@ static int mainClient(int argc, const char *argv[])
 		LOG_ERROR << "Failed to find command \"" << commandName << "\" in configuration";
 
 	LOG_DEBUG << "Starting command " << commandName;
-	return k8psh::Process::runRemoteCommand(k8psh::Utilities::relativize(configuration.getBaseDirectory(), k8psh::Utilities::getWorkingDirectory()), commandIt->second, std::size_t(argc) - i, argv + i);
+	return k8psh::Process::runRemoteCommand(k8psh::Utilities::relativizePath(configuration.getBaseDirectory(), k8psh::Utilities::getWorkingDirectory()), commandIt->second, std::size_t(argc) - i, argv + i, configuration);
 }
 
 #ifdef _WIN32
@@ -207,6 +206,7 @@ static int mainServer(int argc, const char *argv[])
 	bool ignoreInvalidArguments = false;
 	bool keepClientExecutables = false;
 	bool overwriteClientExecutables = false;
+	bool waitOnClientConnections = true;
 	k8psh::OptionalString config;
 	std::string directory;
 	std::string name;
@@ -224,7 +224,8 @@ static int mainServer(int argc, const char *argv[])
 				arg == "-d" || arg == "--disable-client-executables" ||
 				arg == "-k" || arg == "--keep-client-executables" ||
 				arg == "-l" || arg == "--generate-local-executables" ||
-				arg == "-o" || arg == "--overwrite-client-executables")
+				arg == "-o" || arg == "--overwrite-client-executables" ||
+				arg == "-w" || arg == "--no-wait")
 			deferredArgs.emplace_back(arg);
 		else if (parseOption(arg, "-e", "--executable-directory", "[directory]", i, argc, argv, directory, &deferredArgs) ||
 				parseOption(arg, "-m", "--max-connections", "[connections]", i, argc, argv, connections, &deferredArgs) ||
@@ -264,11 +265,13 @@ static int mainServer(int argc, const char *argv[])
 			std::cout << "  -o, --overwrite-client-executables" << std::endl;
 			std::cout << "      Overwrite client executables rather than fail with error." << std::endl;
 			std::cout << "  -p, --pidfile [file]" << std::endl;
-			std::cout << "      The file to store the PID of the server. Defaults to " << defaultPidFilename << " for server." << std::endl;
+			std::cout << "      The file to store the PID of the server. Defaults to " << defaultPidFilename << "." << std::endl;
 			std::cout << "  -t, --timeout [ms]" << std::endl;
-			std::cout << "      The time in milliseconds before the server exits. Defaults to -1 (run forever) for server, 0 for client." << std::endl;
+			std::cout << "      The time in milliseconds before the server exits. Defaults to -1 (run forever)." << std::endl;
 			std::cout << "  -v, --version" << std::endl;
 			std::cout << "      Prints the version and exits." << std::endl;
+			std::cout << "  -w, --no-wait" << std::endl;
+			std::cout << "      Do not wait for client connections to terminate." << std::endl;
 			return 0;
 		}
 		else if (arg == "-i" || arg == "--ignore-invalid-arguments")
@@ -308,10 +311,8 @@ static int mainServer(int argc, const char *argv[])
 
 	if (!serverCommands || serverCommands->empty())
 	{
-		LOG_DEBUG << "No server commands found in configuration, assuming client";
-
+		LOG_DEBUG << "No server commands found in configuration, creating client executables and exiting";
 		keepClientExecutables = true;
-		timeout = "0";
 	}
 	else
 	{
@@ -347,6 +348,8 @@ static int mainServer(int argc, const char *argv[])
 			; // Option recognized and parsed
 		else if (arg == "-o" || arg == "--overwrite-client-executables")
 			overwriteClientExecutables = true;
+		else if (arg == "-w" || arg == "--no-wait")
+			waitOnClientConnections = false;
 		else if (ignoreInvalidArguments)
 			LOG_WARNING << "Ignoring unrecognized argument " << arg;
 		else
@@ -389,21 +392,21 @@ static int mainServer(int argc, const char *argv[])
 			LOG_ERROR << "Failed to create client executable for command " << it->second.getName();
 	}
 
-#ifndef _WIN32
-	int pidFile = -1;
-#endif
-	long long connectionCount = 0;
-	long long maxConnections = 0;
-	long long timeoutMs = 0;
-
-	try { maxConnections = std::stoll(connections); }
-	catch (const std::exception &e) { LOG_ERROR << "Failed to parse max connections: " << e.what(); }
-
-	try { timeoutMs = std::stoll(timeout); }
-	catch (const std::exception &e) { LOG_ERROR << "Failed to parse timeout: " << e.what(); }
-
-	if (listener.isValid() || timeoutMs)
+	if (listener.isValid())
 	{
+#ifndef _WIN32
+		int pidFile = -1;
+#endif
+		long long connectionCount = 0;
+		long long maxConnections = 0;
+		long long timeoutMs = 0;
+
+		try { maxConnections = std::stoll(connections); }
+		catch (const std::exception &e) { LOG_ERROR << "Failed to parse max connections: " << e.what(); }
+
+		try { timeoutMs = std::stoll(timeout); }
+		catch (const std::exception &e) { LOG_ERROR << "Failed to parse timeout (" << timeout << "): " << e.what(); }
+
 		auto endTime = timeoutMs >= 0 ? std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs) : std::chrono::steady_clock::time_point::max();
 
 		// Daemonize, if desired
@@ -476,8 +479,8 @@ static int mainServer(int argc, const char *argv[])
 
 		// Main loop
 #ifdef _WIN32
-		HANDLE waitSet[2];
 		std::thread clientThread;
+		HANDLE waitSet[2];
 
 		waitSet[0] = exitRequested = CreateEventA(NULL, FALSE, FALSE, "ServerExit");
 		waitSet[1] = listener.createReadEvent();
@@ -567,12 +570,31 @@ static int mainServer(int argc, const char *argv[])
 		LOG_DEBUG << "Shutting down the server, handled " << connectionCount << " connection(s)";
 
 #ifdef _WIN32
-		if (clientThread.joinable())
+		if (waitOnClientConnections && connectionCount)
+		{
+			LOG_DEBUG << "Waiting for all connections to terminate";
 			clientThread.join();
+			LOG_DEBUG << "All connections terminated";
+		}
+		else if (connectionCount)
+			clientThread.detach();
 #else
 		// Remove PID file
 		if (pidFile >= 0 && !k8psh::Utilities::deleteFile(pidFilename.c_str()))
 			LOG_WARNING << "Failed to remove PID file " << pidFilename;
+
+		if (waitOnClientConnections && connectionCount)
+		{
+			int status;
+
+			LOG_DEBUG << "Waiting for all connections to terminate";
+			signal(SIGCHLD, SIG_DFL);
+
+			while (wait(&status) >= 0 || errno != ECHILD)
+				; // Continue until all children have been reaped
+
+			LOG_DEBUG << "All connections terminated";
+		}
 #endif
 	}
 
@@ -598,7 +620,7 @@ static int mainServer(int argc, const char *argv[])
 		}
 	}
 
-	return 0;
+	std::exit(0); // Skip local destructors, since some local data may be shared with active threads
 }
 
 int main(int argc, const char *argv[])

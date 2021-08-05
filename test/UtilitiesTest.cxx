@@ -7,6 +7,12 @@
 
 #include "Test.hxx"
 
+#ifdef _WIN32
+static const std::string ROOT_PATH = "C:\\";
+#else
+static const std::string ROOT_PATH = "/";
+#endif
+
 int main()
 {
 	// Working Directory / Hostname
@@ -40,13 +46,21 @@ int main()
 	TEST_THAT(k8psh::Utilities::getBasename("./bin/k8psh") == "k8psh");
 	TEST_THAT(k8psh::Utilities::getBasename("./k8psh") == "k8psh");
 
+	// Normalize
+	TEST_THAT(k8psh::Utilities::normalizePath(ROOT_PATH) == ROOT_PATH);
+	TEST_THAT(k8psh::Utilities::normalizePath(ROOT_PATH + "../../../") == ROOT_PATH);
+	TEST_THAT(k8psh::Utilities::normalizePath(ROOT_PATH + "../../..") == ROOT_PATH);
+	TEST_THAT(k8psh::Utilities::normalizePath("../blah/../../") == ".." + k8psh::Utilities::getPathSeparator() + "..");
+	TEST_THAT(k8psh::Utilities::normalizePath("blah2//blah3/./blah4/..") == "blah2" + k8psh::Utilities::getPathSeparator() + "blah3");
+	TEST_THAT(k8psh::Utilities::normalizePath(ROOT_PATH + "../blah/../blah2/../blah3") == ROOT_PATH + "blah3");
+
 	// Relativize
-	TEST_THAT(k8psh::Utilities::relativize("/blah//blah2//", "/blah/blah2/blah3") == "blah3");
-	TEST_THAT(k8psh::Utilities::relativize("/blah/./blah2/.", "/./blah/blah2/blah3") == "blah3");
-	TEST_THROWS(k8psh::Utilities::relativize("/blah//blah2", "/blah/blah2_blah3"));
-	TEST_THROWS(k8psh::Utilities::relativize("/blah//blah2_blah3", "/blah/blah2"));
+	TEST_THAT(k8psh::Utilities::relativizePath("/blah//blah2//", "/blah/blah2/blah3") == "blah3");
+	TEST_THAT(k8psh::Utilities::relativizePath("/blah/./blah2/.", "/./blah/blah2/blah3") == "blah3");
+	TEST_THROWS(k8psh::Utilities::relativizePath("/blah//blah2", "/blah/blah2_blah3"));
+	TEST_THROWS(k8psh::Utilities::relativizePath("/blah//blah2_blah3", "/blah/blah2"));
 
 #ifdef _WIN32
-	TEST_THAT(k8psh::Utilities::relativize("C:/Blah//blah2", "c:/blah/Blah2/blah3") == "blah3");
+	TEST_THAT(k8psh::Utilities::relativizePath(ROOT_PATH + "Blah//blah2", ROOT_PATH + "blah/Blah2/blah3") == "blah3");
 #endif
 }

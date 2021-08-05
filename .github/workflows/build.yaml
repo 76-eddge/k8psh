@@ -34,17 +34,29 @@ jobs:
       env:
         DOCKER_BUILDKIT: 1
 
-    - name: Test Docker Image
-      run: docker run --rm -t 76eddge/k8psh
-
     - name: Create Asset
-      if: startsWith(github.ref, 'refs/tags/')
       run: |
         CONTAINER_ID=$(docker create 76eddge/k8psh)
         docker cp ${CONTAINER_ID}:/bin bin
         docker rm ${CONTAINER_ID}
         cd bin
         tar -czf ../k8psh-linux.tar.gz *
+
+    - name: Setup Minikube
+      uses: manusa/actions-setup-minikube@v2.4.2
+      with:
+        minikube version: 'v1.22.0'
+        kubernetes version: 'v1.22.0'
+        github token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Test Asset
+      run: |
+        kubectl create serviceaccount default
+        envsubst < test/k8s/test.yaml | kubectl apply -f -
+        kubectl wait --for=condition=complete job/test || kubectl describe job/test
+        kubectl logs job/test -c server
+        kubectl logs job/test -c client
+        kubectl wait --for=condition=complete --timeout=0 job/test
 
     - name: Upload Asset
       if: startsWith(github.ref, 'refs/tags/')
@@ -60,7 +72,7 @@ jobs:
       with:
         platforms: all
 
-    - name: Create BuildKit configuration
+    - name: Create BuildKit Configuration
       if: startsWith(github.ref, 'refs/tags/')
       run: |
         echo "[worker.oci]" > buildkitd.toml

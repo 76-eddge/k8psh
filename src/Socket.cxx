@@ -130,7 +130,7 @@ k8psh::Socket k8psh::Socket::listen(unsigned short port)
 }
 
 // Creates a new socket by connecting to the specified port. This call may return an invalid socket if a recoverable error is encountered.
-k8psh::Socket k8psh::Socket::connect(unsigned short port)
+k8psh::Socket k8psh::Socket::connect(unsigned short port, bool failOnError)
 {
 	k8psh::Socket socket = createSocketHandle();
 	sockaddr_in ipv4 = sockaddr_in();
@@ -149,12 +149,13 @@ k8psh::Socket k8psh::Socket::connect(unsigned short port)
 		int error = getSocketErrorCode();
 
 #ifdef _WIN32
-		if (error != WSAEINTR && error != WSAENOBUFS)
+		if (failOnError && error != WSAEINTR && error != WSAENOBUFS)
 #else
-		if (error != EINTR && error != ENOBUFS)
+		if (failOnError && error != EINTR && error != ENOBUFS)
 #endif
 			LOG_ERROR << "Failed to connect to port " << port << ": " << error;
 
+		LOG_DEBUG << "Failed to connect to port " << port << " on socket " << socket._handle;
 		return INVALID_HANDLE;
 	}
 

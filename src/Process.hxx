@@ -25,9 +25,10 @@ public:
 	 * @param command the command to start
 	 * @param argc the number of additional arguments used to start the process
 	 * @param argv additional arguments used to start the process
+	 * @param configuration the global configuration
 	 * @return the exit code of the process
 	 */
-	static int runRemoteCommand(const std::string &workingDirectory, const Configuration::Command &command, std::size_t argc, const char *argv[]);
+	static int runRemoteCommand(const std::string &workingDirectory, const Configuration::Command &command, std::size_t argc, const char *argv[], const k8psh::Configuration &configuration);
 
 	/** Starts the process requested by the remote socket channel. This call is non-blocking and will spawn a new thread or process to handle communications on the socket. The socket does not need to be closed.
 	 *

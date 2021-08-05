@@ -198,10 +198,12 @@ static std::size_t parseArguments(const std::string &configurationString, std::s
 k8psh::Configuration k8psh::Configuration::load(const std::string &configurationString, const std::string &workingPath)
 {
 	k8psh::Configuration configuration;
-	std::string absoluteWorkingPath = Utilities::getAbsolutePath(workingPath);
+	std::string absoluteWorkingPath = Utilities::normalizePath(Utilities::getAbsolutePath(workingPath));
 	std::size_t i = 0;
 
+	// Assign the defaults
 	configuration._baseDirectory = absoluteWorkingPath;
+	configuration._connectTimeoutMs = 30000;
 
 	// Parse client settings
 	for (;;)
@@ -219,7 +221,12 @@ k8psh::Configuration k8psh::Configuration::load(const std::string &configuration
 			i = ensureRestOfLineEmpty(configurationString, getConfigurationValue(configurationString, i, key, value));
 
 			if (key == "baseDirectory")
-				configuration._baseDirectory = Utilities::isAbsolutePath(value) ? value : Utilities::getAbsolutePath(absoluteWorkingPath + '/' + value);
+				configuration._baseDirectory = Utilities::normalizePath(Utilities::isAbsolutePath(value) ? value : Utilities::getAbsolutePath(absoluteWorkingPath + '/' + value));
+			else if (key == "connectTimeoutMs")
+			{
+				try { configuration._connectTimeoutMs = std::stoll(value); }
+				catch (const std::exception &e) { LOG_ERROR << "Failed to parse connectTimeoutMs (" << value << "): " << e.what(); }
+			}
 			else
 				LOG_ERROR << "Unrecognized configuration key \"" << key << '"';
 		}
