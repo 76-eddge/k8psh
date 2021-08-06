@@ -65,12 +65,12 @@ int main(int argc, const char *argv[])
 		std::string arg = argv[1];
 
 		if (arg == "--name")
-			return mainServer(argc, argv);
+			mainServer(argc, argv);
 		else if (arg == "0")
 		{
 			TEST_THAT(k8psh::Utilities::getEnvironmentVariable("PATH") == ".");
 			std::cout << k8psh::Utilities::getEnvironmentVariable("K8PSH_TEST_NAME");
-			return 0;
+			std::exit(0);
 		}
 		else if (arg == "1")
 		{
@@ -79,14 +79,13 @@ int main(int argc, const char *argv[])
 
 			TEST_THAT(k8psh::Utilities::getEnvironmentVariable("PATH") != ".");
 			std::cerr << k8psh::Utilities::getEnvironmentVariable("K8PSH_TEST_NAME") << ", " << argv[2];
-			return 1;
+			std::exit(1);
 		}
 		else if (arg == "2")
 		{
 			TEST_THAT(k8psh::Utilities::getEnvironmentVariable("PATH") == ".");
 			std::cout << std::cin.rdbuf();
-
-			return 2;
+			std::exit(2);
 		}
 		else if (arg == "3")
 		{
@@ -95,14 +94,13 @@ int main(int argc, const char *argv[])
 			(void)std::fclose(stdout);
 			(void)std::fclose(stderr);
 			std::this_thread::sleep_for(std::chrono::milliseconds(250));
-
-			return 3;
+			std::exit(3);
 		}
 
-		return mainClient(argc, argv);
+		mainClient(argc, argv);
 	}
 	else if (basename != "k8pshTest")
-		return mainClient(argc, argv);
+		mainClient(argc, argv);
 
 	// Create configuration file
 	std::ofstream configFile((basename + ".conf").c_str());
@@ -142,6 +140,4 @@ int main(int argc, const char *argv[])
 	TEST_THAT(runCommand("3_" + basename + " < test.out > test3.out 2> test.err") == 3);
 	TEST_THAT(k8psh::Utilities::readFile("test3.out").empty());
 	TEST_THAT(k8psh::Utilities::readFile("test.err").empty());
-
-	std::exit(0);
 }

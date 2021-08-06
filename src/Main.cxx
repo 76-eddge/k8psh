@@ -103,7 +103,7 @@ template <typename ArgListT> static bool parseOption(const std::string &argument
 }
 
 // The main() for connecting to the server and starting the process
-static int mainClient(int argc, const char *argv[])
+static void mainClient(int argc, const char *argv[])
 {
 	std::string commandName = k8psh::Utilities::getExecutableBasename(argv[0]);
 	k8psh::OptionalString config;
@@ -131,12 +131,12 @@ static int mainClient(int argc, const char *argv[])
 				std::cout << "      Displays usage and exits." << std::endl;
 				std::cout << "  -v, --version" << std::endl;
 				std::cout << "      Prints the version and exits." << std::endl;
-				return 0;
+				std::exit(0);
 			}
 			else if (arg == "-v" || arg == "--version")
 			{
 				std::cout << commandName << ' ' << version << std::endl;
-				return 0;
+				std::exit(0);
 			}
 			else
 			{
@@ -154,7 +154,7 @@ static int mainClient(int argc, const char *argv[])
 		LOG_ERROR << "Failed to find command \"" << commandName << "\" in configuration";
 
 	LOG_DEBUG << "Starting command " << commandName;
-	return k8psh::Process::runRemoteCommand(k8psh::Utilities::relativizePath(configuration.getBaseDirectory(), k8psh::Utilities::getWorkingDirectory()), commandIt->second, std::size_t(argc) - i, argv + i, configuration);
+	std::exit(k8psh::Process::runRemoteCommand(k8psh::Utilities::relativizePath(configuration.getBaseDirectory(), k8psh::Utilities::getWorkingDirectory()), commandIt->second, std::size_t(argc) - i, argv + i, configuration));
 }
 
 #ifdef _WIN32
@@ -196,7 +196,7 @@ BOOL WINAPI handleCtrlC(DWORD)
 static const std::string defaultPidFilename = "/run/" + serverName + ".pid";
 
 // The main() for the server that waits requests to run executables in the configuration
-static int mainServer(int argc, const char *argv[])
+static void mainServer(int argc, const char *argv[])
 {
 	k8psh::Socket::Initializer socketInit;
 	std::string commandName = k8psh::Utilities::getExecutableBasename(argv[0]);
@@ -273,14 +273,14 @@ static int mainServer(int argc, const char *argv[])
 			std::cout << "      Prints the version and exits." << std::endl;
 			std::cout << "  -w, --no-wait" << std::endl;
 			std::cout << "      Do not wait for client connections to terminate." << std::endl;
-			return 0;
+			std::exit(0);
 		}
 		else if (arg == "-i" || arg == "--ignore-invalid-arguments")
 			ignoreInvalidArguments = true;
 		else if (arg == "-v" || arg == "--version")
 		{
 			std::cout << commandName << ' ' << version << std::endl;
-			return 0;
+			std::exit(0);
 		}
 		else if (ignoreInvalidArguments)
 			LOG_WARNING << "Ignoring unrecognized argument " << arg;
@@ -460,7 +460,7 @@ static int mainServer(int argc, const char *argv[])
 
 				default:
 					(void)close(listener.abandon());
-					return 0;
+					std::exit(0);
 				}
 
 				// Create PID file
@@ -476,7 +476,7 @@ static int mainServer(int argc, const char *argv[])
 				}
 
 				if (setsid() == -1)
-					return -1;
+					std::exit(-1);
 
 				signal(SIGHUP, SIG_IGN);
 				signal(SIGCHLD, SIG_IGN);
@@ -575,8 +575,7 @@ static int mainServer(int argc, const char *argv[])
 #ifdef _WIN32
 					clientThread = std::thread(std::bind([&](std::thread &chainedThread, k8psh::Socket &client)
 					{
-						k8psh::Process::run(configuration.getBaseDirectory(), *serverCommands, client);
-						client.close();
+						k8psh::Process::run(configuration.getBaseDirectory(), *serverCommands, std::move(client));
 
 						if (chainedThread.joinable())
 							chainedThread.join();
@@ -588,8 +587,8 @@ static int mainServer(int argc, const char *argv[])
 					{
 						(void)close(listener.abandon());
 						signal(SIGCHLD, SIG_DFL);
-						k8psh::Process::run(configuration.getBaseDirectory(), *serverCommands, client);
-						return 0;
+						k8psh::Process::run(configuration.getBaseDirectory(), *serverCommands, std::move(client));
+						std::exit(0);
 					}
 
 					(void)close(client.abandon());
@@ -644,7 +643,9 @@ int main(int argc, const char *argv[])
 	std::string commandName = k8psh::Utilities::getExecutableBasename(argv[0]);
 
 	if (commandName == serverName)
-		return mainServer(argc, argv);
+		mainServer(argc, argv);
 	else
-		return mainClient(argc, argv);
+		mainClient(argc, argv);
+
+	return 0;
 }

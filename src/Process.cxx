@@ -344,7 +344,7 @@ static std::mutex workingDirectoryMutex;
  * @param commands the map of commands for this server node
  * @param socket the open socket used to communicate with the client
  */
-void k8psh::Process::run(const std::string &workingDirectory, const k8psh::Configuration::CommandMap &commands, k8psh::Socket &socket)
+void k8psh::Process::run(const std::string &workingDirectory, const k8psh::Configuration::CommandMap &commands, k8psh::Socket &&socket)
 {
 #ifdef _WIN32
 	HANDLE process = HANDLE();
