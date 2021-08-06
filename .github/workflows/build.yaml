@@ -80,7 +80,7 @@ jobs:
 
     - name: Setup Docker Buildx
       if: startsWith(github.ref, 'refs/tags/')
-      uses: docker/setup-buildx-action@v1.3.0
+      uses: docker/setup-buildx-action@v1.5.1
       with:
         version: latest
         config: buildkitd.toml

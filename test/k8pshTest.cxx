@@ -119,7 +119,7 @@ int main(int argc, const char *argv[])
 	k8psh::Utilities::setEnvironmentVariable("K8PSH_CONFIG", basename + ".conf");
 	k8psh::Utilities::setEnvironmentVariable("K8PSH_DEBUG", "Main, Configuration, Process");
 
-	std::thread([executable]{ (void)runCommand(executable + " --name k8pshTest"); }).detach();
+	std::thread([&] { (void)runCommand(executable + " --name k8pshTest"); }).detach();
 	std::this_thread::sleep_for(std::chrono::milliseconds(250));
 	k8psh::Utilities::setEnvironmentVariable("K8PSH_DEBUG");
 

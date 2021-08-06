@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #ifdef _WIN32
 	#include <functional>
@@ -363,263 +364,278 @@ static int mainServer(int argc, const char *argv[])
 	// Generate the appropriate client symlinks / executables
 	std::string clientCommand = k8psh::Utilities::getExecutablePath();
 	const auto commands = configuration.getCommands();
-
-	for (auto it = commands.begin(); it != commands.end(); ++it)
-	{
-#ifdef _WIN32
-		const std::string filename = directory + it->second.getName() + ".exe";
-#else
-		const std::string filename = directory + it->second.getName();
-#endif
-
-		if (disableClientExecutables || overwriteClientExecutables)
-			(void)k8psh::Utilities::deleteFile(filename.c_str());
-
-		if (disableClientExecutables || (!generateLocalExecutables && name == it->second.getHost().getHostname()))
-			continue;
-
-#ifdef _WIN32
-		// Attempt to link or copy executable (hardlinks can't be deleted while in use, so don't hardlink to executable otherwise overwrite client executables option will fail)
-		if (CreateSymbolicLinkA(filename.c_str(), clientCommand.c_str(), SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0 ||
-				(it != commands.begin() && CreateHardLinkA(filename.c_str(), clientCommand.c_str(), NULL) != 0))
-			continue; // Successfully linked
-		else if (CopyFileA(clientCommand.c_str(), filename.c_str(), overwriteClientExecutables ? FALSE : TRUE) != 0)
-			clientCommand = filename; // Try to link to copied file from now on
-		else
-#else
-		if (symlink(clientCommand.c_str(), filename.c_str()) != 0)
-#endif
-			LOG_ERROR << "Failed to create client executable for command " << it->second.getName();
-	}
-
-	if (listener.isValid())
-	{
+	std::vector<std::string> createdExecutables;
 #ifndef _WIN32
-		int pidFile = -1;
+	int pidFile = -1;
 #endif
-		long long connectionCount = 0;
-		long long maxConnections = 0;
-		long long timeoutMs = 0;
-
-		try { maxConnections = std::stoll(connections); }
-		catch (const std::exception &e) { LOG_ERROR << "Failed to parse max connections: " << e.what(); }
-
-		try { timeoutMs = std::stoll(timeout); }
-		catch (const std::exception &e) { LOG_ERROR << "Failed to parse timeout (" << timeout << "): " << e.what(); }
-
-		auto endTime = timeoutMs >= 0 ? std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs) : std::chrono::steady_clock::time_point::max();
-
-		// Daemonize, if desired
-		if (daemonize)
+	auto cleanup = [&]
+	{
+		if (!keepClientExecutables)
 		{
+			for (auto it = createdExecutables.begin(); it != createdExecutables.end(); ++it)
+			{
 #ifdef _WIN32
-			LOG_ERROR << "Daemon not supported";
+				// Hardlinks are used on Windows, so give additional time to the client processes to complete so that the executables can be deleted
+				int attemptsRemaining = (it == createdExecutables.begin() ? 8 : 1);
+
+				while (!k8psh::Utilities::deleteFile(*it) && --attemptsRemaining)
+					Sleep(16);
+
+				if (!attemptsRemaining)
 #else
-			LOG_DEBUG << "Starting daemon";
-
-			switch (fork())
-			{
-			case 0:
-				break;
-
-			case -1:
-				LOG_ERROR << "Failed to fork daemon";
-
-			default:
-				(void)close(listener.abandon());
-				return 0;
-			}
-
-			// Create PID file
-			if (!pidFilename.empty())
-			{
-				std::string pid = std::to_string(getpid()) + '\n';
-				pidFile = open(pidFilename.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0644);
-
-				if (pidFile < 0 || write(pidFile, &pid[0], pid.size()) != ssize_t(pid.size()))
-					LOG_ERROR << "Failed to write PID file " << pidFilename;
-
-				(void)close(pidFile);
-			}
-
-			if (setsid() == -1)
-				return -1;
-
-			signal(SIGHUP, SIG_IGN);
-			signal(SIGCHLD, SIG_IGN);
-
-			(void)k8psh::Utilities::changeWorkingDirectory("/");
-			(void)umask(0);
-
-			int devNull = open("/dev/null", O_RDWR, 0);
-
-			if (devNull == -1)
-				LOG_ERROR << "Failed to open /dev/null for daemon";
-
-			(void)dup2(devNull, STDIN_FILENO);
-			(void)dup2(devNull, STDOUT_FILENO);
-			(void)dup2(devNull, STDERR_FILENO);
-			(void)close(devNull);
+				if (!k8psh::Utilities::deleteFile(*it))
 #endif
+					LOG_WARNING << "Failed to remove client executable " << *it;
+			}
 		}
+
 #ifndef _WIN32
-		else
-		{
-			signal(SIGHUP, handleSignal);
-			signal(SIGCHLD, SIG_IGN);
-		}
-#endif
-
-		signal(SIGTERM, handleSignal);
-		signal(SIGINT, handleSignal);
-
-#ifdef _WIN32
-		(void)SetConsoleCtrlHandler(handleCtrlC, TRUE);
-#endif
-
-		// Main loop
-#ifdef _WIN32
-		std::thread clientThread;
-		HANDLE waitSet[2];
-
-		waitSet[0] = exitRequested = CreateEventA(NULL, FALSE, FALSE, "ServerExit");
-		waitSet[1] = listener.createReadEvent();
-#else
-		struct pollfd pollSet[2] = { };
-
-		pollSet[0].fd = exitRequested.getOutput();
-		pollSet[0].events = POLLIN;
-
-		pollSet[1].fd = listener.createReadEvent();
-		pollSet[1].events = POLLIN;
-#endif
-
-		LOG_DEBUG << "Entering server connection listener loop";
-
-		while (connectionCount < maxConnections || maxConnections < 0)
-		{
-			auto remainingMs = std::chrono::duration_cast<std::chrono::milliseconds>(endTime -
-				(timeoutMs >= 0 ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point::max())).count();
-#ifdef _WIN32
-			auto waitMs = clampPositive(remainingMs, std::chrono::milliseconds::rep(INFINITE - 1));
-			DWORD waitResult = WaitForMultipleObjects(DWORD(sizeof(waitSet) / sizeof(waitSet[0]) - (listener.isValid() ? 0 : 1)), waitSet, FALSE, timeoutMs >= 0 ? DWORD(waitMs) : INFINITE);
-
-			if (waitResult == WAIT_FAILED)
-				LOG_ERROR << "Failed to wait on multiple objects for new clients: " << GetLastError();
-			else if (waitResult == WAIT_OBJECT_0)
-				break;
-			else if (waitResult == WAIT_TIMEOUT)
-#else
-			auto waitMs = clampPositive(remainingMs, std::chrono::milliseconds::rep(unsigned(-1) >> 1));
-			int pollResult;
-
-			do pollResult = poll(pollSet, nfds_t(sizeof(pollSet) / sizeof(pollSet[0]) - (listener.isValid() ? 0 : 1)), timeoutMs >= 0 ? int(waitMs) : -1);
-			while (pollResult < 0 && (errno == EAGAIN || errno == EINTR));
-
-			if (pollResult < 0 || (pollSet[1].revents & POLLERR) != 0)
-				LOG_ERROR << "Failed to poll for new clients: " << errno;
-			else if ((pollSet[0].revents & (POLLIN | POLLHUP | POLLERR)) != 0)
-				break;
-			else if (pollResult == 0)
-#endif
-			{
-				if (remainingMs <= waitMs)
-					break;
-				else
-					continue;
-			}
-
-			if (!listener.isValid())
-				continue;
-
-			k8psh::Socket client = listener.accept();
-
-			// Start the child thread / process
-			if (client.isValid())
-			{
-				LOG_DEBUG << "Accepted connection from new client";
-
-#ifdef _WIN32
-				clientThread = std::thread([chainedThread { std::move(clientThread) }, configuration, serverCommands, client { std::move(client) }]() mutable {
-					k8psh::Process::start(configuration.getBaseDirectory(), *serverCommands, std::move(client));
-
-					if (chainedThread.joinable())
-						chainedThread.join();
-				});
-#else
-				pid_t child = fork();
-
-				if (child == 0)
-				{
-					(void)close(listener.abandon());
-					signal(SIGCHLD, SIG_DFL);
-					k8psh::Process::start(configuration.getBaseDirectory(), *serverCommands, std::move(client));
-					return 0;
-				}
-
-				(void)close(client.abandon());
-
-				if (child == -1)
-					LOG_ERROR << "Failed to fork client: " << errno;
-#endif
-
-				connectionCount++;
-			}
-		}
-
-		LOG_DEBUG << "Shutting down the server, handled " << connectionCount << " connection(s)";
-
-#ifdef _WIN32
-		if (waitOnClientConnections && connectionCount)
-		{
-			LOG_DEBUG << "Waiting for all connections to terminate";
-			clientThread.join();
-			LOG_DEBUG << "All connections terminated";
-		}
-		else if (connectionCount)
-			clientThread.detach();
-#else
 		// Remove PID file
 		if (pidFile >= 0 && !k8psh::Utilities::deleteFile(pidFilename.c_str()))
 			LOG_WARNING << "Failed to remove PID file " << pidFilename;
-
-		if (waitOnClientConnections && connectionCount)
-		{
-			int status;
-
-			LOG_DEBUG << "Waiting for all connections to terminate";
-			signal(SIGCHLD, SIG_DFL);
-
-			while (wait(&status) >= 0 || errno != ECHILD)
-				; // Continue until all children have been reaped
-
-			LOG_DEBUG << "All connections terminated";
-		}
 #endif
-	}
+	};
 
-	if (!disableClientExecutables && !keepClientExecutables)
+	try
 	{
 		for (auto it = commands.begin(); it != commands.end(); ++it)
 		{
-			if (!generateLocalExecutables && name == it->second.getHost().getHostname())
+#ifdef _WIN32
+			const std::string filename = directory + it->second.getName() + ".exe";
+#else
+			const std::string filename = directory + it->second.getName();
+#endif
+
+			if (disableClientExecutables || overwriteClientExecutables)
+				(void)k8psh::Utilities::deleteFile(filename.c_str());
+
+			if (disableClientExecutables || (!generateLocalExecutables && name == it->second.getHost().getHostname()))
 				continue;
 
 #ifdef _WIN32
-			// Hardlinks are used on Windows, so give additional time to the client processes to complete so that the executables can be deleted
-			int attemptsRemaining = (it == commands.begin() ? 8 : 1);
-
-			while (!k8psh::Utilities::deleteFile(directory + it->second.getName() + ".exe") && --attemptsRemaining)
-				Sleep(16);
-
-			if (!attemptsRemaining)
+			// Attempt to link or copy executable (hardlinks can't be deleted while in use, so don't hardlink to executable otherwise overwrite client executables option will fail)
+			if (CreateSymbolicLinkA(filename.c_str(), clientCommand.c_str(), SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE) != 0 ||
+					(it != commands.begin() && CreateHardLinkA(filename.c_str(), clientCommand.c_str(), NULL) != 0))
+				; // Successfully linked
+			else if (CopyFileA(clientCommand.c_str(), filename.c_str(), overwriteClientExecutables ? FALSE : TRUE) != 0)
+				clientCommand = filename; // Try to link to copied file from now on
+			else
 #else
-			if (!k8psh::Utilities::deleteFile(directory + it->second.getName()))
+			if (symlink(clientCommand.c_str(), filename.c_str()) != 0)
 #endif
-				LOG_WARNING << "Failed to remove client executable for command " << it->second.getName();
+				LOG_ERROR << "Failed to create client executable for command " << it->second.getName();
+
+			createdExecutables.emplace_back(filename);
+		}
+
+		if (listener.isValid())
+		{
+			long long connectionCount = 0;
+			long long maxConnections = 0;
+			long long timeoutMs = 0;
+
+			try { maxConnections = std::stoll(connections); }
+			catch (const std::exception &e) { LOG_ERROR << "Failed to parse max connections: " << e.what(); }
+
+			try { timeoutMs = std::stoll(timeout); }
+			catch (const std::exception &e) { LOG_ERROR << "Failed to parse timeout (" << timeout << "): " << e.what(); }
+
+			auto endTime = timeoutMs >= 0 ? std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs) : std::chrono::steady_clock::time_point::max();
+
+			// Daemonize, if desired
+			if (daemonize)
+			{
+#ifdef _WIN32
+				LOG_ERROR << "Daemon not supported";
+#else
+				LOG_DEBUG << "Starting daemon";
+
+				switch (fork())
+				{
+				case 0:
+					break;
+
+				case -1:
+					LOG_ERROR << "Failed to fork daemon";
+
+				default:
+					(void)close(listener.abandon());
+					return 0;
+				}
+
+				// Create PID file
+				if (!pidFilename.empty())
+				{
+					std::string pid = std::to_string(getpid()) + '\n';
+					pidFile = open(pidFilename.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0644);
+
+					if (pidFile < 0 || write(pidFile, &pid[0], pid.size()) != ssize_t(pid.size()))
+						LOG_ERROR << "Failed to write PID file " << pidFilename;
+
+					(void)close(pidFile);
+				}
+
+				if (setsid() == -1)
+					return -1;
+
+				signal(SIGHUP, SIG_IGN);
+				signal(SIGCHLD, SIG_IGN);
+
+				(void)k8psh::Utilities::changeWorkingDirectory("/");
+				(void)umask(0);
+
+				int devNull = open("/dev/null", O_RDWR, 0);
+
+				if (devNull == -1)
+					LOG_ERROR << "Failed to open /dev/null for daemon";
+
+				(void)dup2(devNull, STDIN_FILENO);
+				(void)dup2(devNull, STDOUT_FILENO);
+				(void)dup2(devNull, STDERR_FILENO);
+				(void)close(devNull);
+#endif
+			}
+#ifndef _WIN32
+			else
+			{
+				signal(SIGHUP, handleSignal);
+				signal(SIGCHLD, SIG_IGN);
+			}
+#endif
+
+			signal(SIGTERM, handleSignal);
+			signal(SIGINT, handleSignal);
+
+#ifdef _WIN32
+			(void)SetConsoleCtrlHandler(handleCtrlC, TRUE);
+#endif
+
+			// Main loop
+#ifdef _WIN32
+			std::thread clientThread;
+			HANDLE waitSet[2];
+
+			waitSet[0] = exitRequested = CreateEventA(NULL, FALSE, FALSE, "ServerExit");
+			waitSet[1] = listener.createReadEvent();
+#else
+			struct pollfd pollSet[2] = { };
+
+			pollSet[0].fd = exitRequested.getOutput();
+			pollSet[0].events = POLLIN;
+
+			pollSet[1].fd = listener.createReadEvent();
+			pollSet[1].events = POLLIN;
+#endif
+
+			LOG_DEBUG << "Entering server connection listener loop";
+
+			while (connectionCount < maxConnections || maxConnections < 0)
+			{
+				auto remainingMs = std::chrono::duration_cast<std::chrono::milliseconds>(endTime -
+					(timeoutMs >= 0 ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point::max())).count();
+#ifdef _WIN32
+				auto waitMs = clampPositive(remainingMs, std::chrono::milliseconds::rep(INFINITE - 1));
+				DWORD waitResult = WaitForMultipleObjects(DWORD(sizeof(waitSet) / sizeof(waitSet[0]) - (listener.isValid() ? 0 : 1)), waitSet, FALSE, timeoutMs >= 0 ? DWORD(waitMs) : INFINITE);
+
+				if (waitResult == WAIT_FAILED)
+					LOG_ERROR << "Failed to wait on multiple objects for new clients: " << GetLastError();
+				else if (waitResult == WAIT_OBJECT_0)
+					break;
+				else if (waitResult == WAIT_TIMEOUT)
+#else
+				auto waitMs = clampPositive(remainingMs, std::chrono::milliseconds::rep(unsigned(-1) >> 1));
+				int pollResult;
+
+				do pollResult = poll(pollSet, nfds_t(sizeof(pollSet) / sizeof(pollSet[0]) - (listener.isValid() ? 0 : 1)), timeoutMs >= 0 ? int(waitMs) : -1);
+				while (pollResult < 0 && (errno == EAGAIN || errno == EINTR));
+
+				if (pollResult < 0 || (pollSet[1].revents & POLLERR) != 0)
+					LOG_ERROR << "Failed to poll for new clients: " << errno;
+				else if ((pollSet[0].revents & (POLLIN | POLLHUP | POLLERR)) != 0)
+					break;
+				else if (pollResult == 0)
+#endif
+				{
+					if (remainingMs <= waitMs)
+						break;
+					else
+						continue;
+				}
+
+				if (!listener.isValid())
+					continue;
+
+				k8psh::Socket client = listener.accept();
+
+				// Start the child thread / process
+				if (client.isValid())
+				{
+					LOG_DEBUG << "Accepted connection from new client";
+
+#ifdef _WIN32
+					clientThread = std::thread(std::bind([&](std::thread &chainedThread, k8psh::Socket &client)
+					{
+						k8psh::Process::start(configuration.getBaseDirectory(), *serverCommands, client);
+						client.close();
+
+						if (chainedThread.joinable())
+							chainedThread.join();
+					}, std::move(clientThread), std::move(client)));
+#else
+					pid_t child = fork();
+
+					if (child == 0)
+					{
+						(void)close(listener.abandon());
+						signal(SIGCHLD, SIG_DFL);
+						k8psh::Process::start(configuration.getBaseDirectory(), *serverCommands, client);
+						return 0;
+					}
+
+					(void)close(client.abandon());
+
+					if (child == -1)
+						LOG_ERROR << "Failed to fork client: " << errno;
+#endif
+
+					connectionCount++;
+				}
+			}
+
+			LOG_DEBUG << "Shutting down the server, handled " << connectionCount << " connection(s)";
+
+#ifdef _WIN32
+			if (waitOnClientConnections && connectionCount)
+			{
+				LOG_DEBUG << "Waiting for all connections to terminate";
+				clientThread.join();
+				LOG_DEBUG << "All connections terminated";
+			}
+			else if (connectionCount)
+				clientThread.detach();
+#else
+			if (waitOnClientConnections && connectionCount)
+			{
+				int status;
+
+				LOG_DEBUG << "Waiting for all connections to terminate";
+				signal(SIGCHLD, SIG_DFL);
+
+				while (wait(&status) >= 0 || errno != ECHILD)
+					; // Continue until all children have been reaped
+
+				LOG_DEBUG << "All connections terminated";
+			}
+#endif
 		}
 	}
+	catch (...)
+	{
+		cleanup();
+		throw;
+	}
 
+	cleanup();
 	std::exit(0); // Skip local destructors, since some local data may be shared with active threads
 }
 

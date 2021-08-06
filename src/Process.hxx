@@ -36,7 +36,7 @@ public:
 	 * @param commands the map of commands for this server node
 	 * @param socket the open socket used to communicate with the client
 	 */
-	static void start(const std::string &workingDirectory, const Configuration::CommandMap &commands, Socket socket);
+	static void start(const std::string &workingDirectory, const Configuration::CommandMap &commands, Socket &socket);
 };
 
 } // k8psh
