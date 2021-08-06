@@ -338,13 +338,13 @@ int k8psh::Process::runRemoteCommand(const std::string &workingDirectory, const 
 static std::mutex workingDirectoryMutex;
 #endif
 
-/** Starts the process requested by the remote socket channel. This call is non-blocking and will spawn a new thread or process to handle communications on the socket. The socket does not need to be closed.
+/** Runs the process requested by the remote socket channel.
  *
  * @param workingDirectory the relative working directory used to start the process
  * @param commands the map of commands for this server node
  * @param socket the open socket used to communicate with the client
  */
-void k8psh::Process::start(const std::string &workingDirectory, const k8psh::Configuration::CommandMap &commands, k8psh::Socket &socket)
+void k8psh::Process::run(const std::string &workingDirectory, const k8psh::Configuration::CommandMap &commands, k8psh::Socket &socket)
 {
 #ifdef _WIN32
 	HANDLE process = HANDLE();
@@ -888,8 +888,5 @@ terminateServer:
 
 	// Clean up all resources, since we are part of the long-running server process
 	(void)CloseHandle(process);
-#else
-	socket.close();
-	exit(0);
 #endif
 }

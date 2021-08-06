@@ -575,7 +575,7 @@ static int mainServer(int argc, const char *argv[])
 #ifdef _WIN32
 					clientThread = std::thread(std::bind([&](std::thread &chainedThread, k8psh::Socket &client)
 					{
-						k8psh::Process::start(configuration.getBaseDirectory(), *serverCommands, client);
+						k8psh::Process::run(configuration.getBaseDirectory(), *serverCommands, client);
 						client.close();
 
 						if (chainedThread.joinable())
@@ -588,7 +588,7 @@ static int mainServer(int argc, const char *argv[])
 					{
 						(void)close(listener.abandon());
 						signal(SIGCHLD, SIG_DFL);
-						k8psh::Process::start(configuration.getBaseDirectory(), *serverCommands, client);
+						k8psh::Process::run(configuration.getBaseDirectory(), *serverCommands, client);
 						return 0;
 					}
 

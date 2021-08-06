@@ -30,13 +30,13 @@ public:
 	 */
 	static int runRemoteCommand(const std::string &workingDirectory, const Configuration::Command &command, std::size_t argc, const char *argv[], const k8psh::Configuration &configuration);
 
-	/** Starts the process requested by the remote socket channel. This call is non-blocking and will spawn a new thread or process to handle communications on the socket. The socket does not need to be closed.
+	/** Runs the process requested by the remote socket channel.
 	 *
 	 * @param workingDirectory the relative working directory used to start the process
 	 * @param commands the map of commands for this server node
 	 * @param socket the open socket used to communicate with the client
 	 */
-	static void start(const std::string &workingDirectory, const Configuration::CommandMap &commands, Socket &socket);
+	static void run(const std::string &workingDirectory, const Configuration::CommandMap &commands, Socket &socket);
 };
 
 } // k8psh
