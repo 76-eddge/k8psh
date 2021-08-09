@@ -129,18 +129,8 @@ k8psh::Logger::~Logger()
 {
 	static auto atomicWrite = [](std::FILE *stream, const std::string &content) { return std::fwrite(&content[0], content.length(), 1, stream); };
 
-	std::string level5Chars;
-	std::ostringstream ss;
-#ifdef _WIN32
-	auto id = std::this_thread::get_id();
-#else
-	auto id = std::uint32_t(getpid() * 16777619U + std::hash<std::thread::id>()(std::this_thread::get_id()));
-#endif
-	auto now = std::chrono::system_clock::now();
-	auto time = std::chrono::system_clock::to_time_t(now);
-	auto gmTime = *std::gmtime(&time);
-	auto seconds = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch());
 	std::string message = _logger.str();
+	std::string level5Chars;
 
 	switch (_level)
 	{
@@ -149,6 +139,23 @@ k8psh::Logger::~Logger()
 	case LEVEL_WARNING: level5Chars = "WARN,  "; break;
 	default:            level5Chars = "ERROR, "; break;
 	}
+
+	std::ostringstream ss;
+#ifdef _WIN32
+	auto id = std::this_thread::get_id();
+#else
+	auto id = std::uint32_t(getpid() * 16777619U + std::hash<std::thread::id>()(std::this_thread::get_id()));
+#endif
+	auto now = std::chrono::system_clock::now();
+	auto time = std::chrono::system_clock::to_time_t(now);
+	::tm gmTime = ::tm();
+	auto seconds = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch());
+
+#ifdef _WIN32
+	(void)gmtime_s(&gmTime, &time);
+#else
+	(void)gmtime_r(&time, &gmTime);
+#endif
 
 	ss << "[" << std::setfill('0') << std::setw(4) << (gmTime.tm_year + 1900) << '-' << std::setw(2) << (gmTime.tm_mon + 1) << '-' << std::setw(2) << gmTime.tm_mday << ' ' <<
 		std::setw(2) << gmTime.tm_hour << ':' << std::setw(2) << gmTime.tm_min << ':' << std::setw(2) << gmTime.tm_sec << '.' <<
