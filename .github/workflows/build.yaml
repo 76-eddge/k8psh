@@ -29,6 +29,13 @@ jobs:
     steps:
     - uses: actions/checkout@v1
 
+    - name: Setup Minikube
+      uses: manusa/actions-setup-minikube@v2.4.2
+      with:
+        minikube version: 'v1.22.0'
+        kubernetes version: 'v1.22.0'
+        github token: ${{ secrets.GITHUB_TOKEN }}
+
     - name: Test Dockerfile
       run: docker build . --tag 76eddge/k8psh --target deploy
       env:
@@ -42,18 +49,11 @@ jobs:
         cd bin
         tar -czf ../k8psh-linux.tar.gz *
 
-    - name: Setup Minikube
-      uses: manusa/actions-setup-minikube@v2.4.2
-      with:
-        minikube version: 'v1.22.0'
-        kubernetes version: 'v1.22.0'
-        github token: ${{ secrets.GITHUB_TOKEN }}
-
     - name: Test Asset
       run: |
-        kubectl create serviceaccount default
         envsubst < test/k8s/test.yaml | kubectl apply -f -
         kubectl wait --for=condition=complete job/test || kubectl describe job/test
+        kubectl logs job/test -c k8psh
         kubectl logs job/test -c server
         kubectl logs job/test -c client
         kubectl wait --for=condition=complete --timeout=0 job/test

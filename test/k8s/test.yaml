@@ -6,10 +6,21 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      initContainers:
+      - name: k8psh
+        image: 76eddge/k8psh
+        imagePullPolicy: Never
+        args: [ --copy-to, /k8psh/bin/k8pshd ]
+        env:
+        - name: K8PSH_DEBUG # To debug, modify the Dockerfile to have cmake create a debug build
+          value: 'Process, Main, Configuration'
+        volumeMounts:
+        - mountPath: /k8psh/bin
+          name: k8psh-bin
       containers:
       - name: server
         image: alpine
-        args: [ /bin/sh, -c, '/workspace-server/bin/k8pshd --config=/workspace-server/test/config/k8s.conf --name=server --max-connections=3' ]
+        command: [ /bin/sh, -c, '/k8psh/bin/k8pshd --config=/workspace-server/test/config/k8s.conf --name=server --max-connections=3' ]
         env:
         - name: K8PSH_DEBUG # To debug, modify the Dockerfile to have cmake create a debug build
           value: 'Process, Main, Configuration'
@@ -22,10 +33,13 @@ spec:
         volumeMounts:
         - mountPath: /workspace-server
           name: workspace
+        - mountPath: /k8psh/bin
+          name: k8psh-bin
+          readOnly: true
       - name: client
         image: ubuntu
         tty: true
-        args: [ /bin/sh, -c, 'cd /workspace/test && /workspace/bin/k8pshd --keep-client-executables && uname -a && printenv K8PSH_TEST && pwd && ./uname -a && ./printenv K8PSH_TEST && ./pwd' ]
+        command: [ /bin/sh, -c, 'BINDIR=$(mktemp -d); cd /workspace/test && k8pshd --executable-directory=$BINDIR && uname -a && printenv K8PSH_TEST && pwd && $BINDIR/uname -a && $BINDIR/printenv K8PSH_TEST && $BINDIR/pwd' ]
         env:
         - name: K8PSH_CONFIG
           value: /workspace/test/config/k8s.conf
@@ -33,6 +47,8 @@ spec:
           value: 'Process, Main, Configuration'
         - name: K8PSH_TEST
           value: 'ClientTest'
+        - name: PATH
+          value: '/bin:/usr/bin:/k8psh/bin'
         resources:
           requests:
             memory: 100Mi
@@ -40,7 +56,13 @@ spec:
         volumeMounts:
         - mountPath: /workspace
           name: workspace
+        - mountPath: /k8psh/bin
+          name: k8psh-bin
+          readOnly: true
       volumes:
+      - name: k8psh-bin
+        emptyDir:
+          medium: Memory
       - name: workspace
         hostPath:
           path: "${GITHUB_WORKSPACE}"

@@ -15,7 +15,7 @@ FROM scratch AS deploy
 COPY --from=build /k8psh-install/ /
 
 WORKDIR /root
-RUN ["/bin/k8pshd", "--version"]
+RUN ["/bin/k8psh", "--version"]
 
-ENTRYPOINT ["/bin/k8pshd"]
+ENTRYPOINT ["/bin/k8psh"]
 CMD ["--version"]

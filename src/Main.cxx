@@ -70,7 +70,7 @@ static k8psh::Configuration getConfiguration(const k8psh::OptionalString &config
  */
 template <typename ArgListT> static bool parseOption(const std::string &argument, const std::string &shortOption, const std::string &option, const std::string &expecting, std::size_t &index, std::size_t argumentCount, const ArgListT &arguments, std::string &value, std::vector<std::string> *deferredArgs = nullptr)
 {
-	if ((argument == shortOption && !shortOption.empty()) || argument == option)
+	if ((!shortOption.empty() && argument == shortOption) || argument == option)
 	{
 		if (index + 1 == argumentCount)
 			LOG_ERROR << "Expecting " << expecting << " after argument " << argument;
@@ -102,11 +102,14 @@ template <typename ArgListT> static bool parseOption(const std::string &argument
 	return false;
 }
 
+static void mainServer(int argc, const char *argv[]);
+
 // The main() for connecting to the server and starting the process
 static void mainClient(int argc, const char *argv[])
 {
 	std::string commandName = k8psh::Utilities::getExecutableBasename(argv[0]);
 	k8psh::OptionalString config;
+	std::string copyFilename;
 	std::size_t i = 1;
 
 	// Parse command line arguments
@@ -119,23 +122,81 @@ static void mainClient(int argc, const char *argv[])
 
 			if (parseOption(arg, "-c", "--config", "[config]", i, argc, argv, config))
 				config.exists();
+			else if (parseOption(arg, "", "--copy-to", "[file]", i, argc, argv, copyFilename))
+			{
+				std::string clientCommand = k8psh::Utilities::getExecutablePath();
+
+#ifdef _WIN32
+				if (CreateHardLinkA(copyFilename.c_str(), clientCommand.c_str(), NULL) == 0 && CopyFileA(clientCommand.c_str(), copyFilename.c_str(), FALSE) == 0)
+					LOG_ERROR << "Failed to copy " << clientCommand << " to " << copyFilename << ": " << GetLastError();
+#else
+				if (link(clientCommand.c_str(), copyFilename.c_str()) != 0)
+				{
+					char buffer[8192];
+					int source = open(clientCommand.c_str(), O_RDONLY, 0);
+
+					if (source < 0)
+						LOG_ERROR << "Failed to open " << clientCommand << ": " << errno;
+
+					int dest = open(copyFilename.c_str(), O_WRONLY | O_CREAT, 0755);
+
+					if (dest < 0)
+						LOG_ERROR << "Failed to open " << copyFilename << ": " << errno;
+
+					for (;;)
+					{
+						auto size = read(source, buffer, sizeof(buffer));
+
+						if (size > 0)
+						{
+							for (;;)
+							{
+								auto wrote = write(dest, buffer, size);
+
+								if (wrote == size)
+									break;
+								else if (wrote >= 0)
+									LOG_ERROR << "Failed to write data to " << copyFilename << " while copying data from " << clientCommand;
+								else if (errno != EINTR)
+									LOG_ERROR << "Failed to write data to " << copyFilename << " while copying data from " << clientCommand << ": " << errno;
+							}
+						}
+						else if (size == 0)
+							break;
+						else if (errno != EINTR)
+							LOG_ERROR << "Failed to read data from " << clientCommand << " to be copied into " << copyFilename << ": " << errno;
+					}
+
+					(void)close(source);
+					(void)close(dest);
+				}
+#endif
+
+				std::exit(0);
+			}
 			else if (arg == "-h" || arg == "--help")
 			{
-				std::cout << "Usage: " << commandName << " [options] command..." << std::endl;
-				std::cout << "  Executes a " << commandName << " client command" << std::endl;
+				std::cout << "Usage: " << clientName << " [-s | --server] [options] command..." << std::endl;
+				std::cout << "  Executes a " << clientName << " client command" << std::endl;
 				std::cout << std::endl;
 				std::cout << "Options:" << std::endl;
 				std::cout << "  -c, --config [file]" << std::endl;
-				std::cout << "      The configuration file loaded by " << commandName << ". Defaults to $" << environmentPrefix << "CONFIG." << std::endl;
+				std::cout << "      The configuration file loaded by " << clientName << ". Defaults to $" << environmentPrefix << "CONFIG." << std::endl;
+				std::cout << "  --copy-to [file]" << std::endl;
+				std::cout << "      Copies this binary to the specified file, overwriting existing files, and then exits." << std::endl;
 				std::cout << "  -h, --help" << std::endl;
 				std::cout << "      Displays usage and exits." << std::endl;
+				std::cout << "  -s, --server" << std::endl;
+				std::cout << "      Runs the server, with all options passed to the server." << std::endl;
 				std::cout << "  -v, --version" << std::endl;
 				std::cout << "      Prints the version and exits." << std::endl;
 				std::exit(0);
 			}
+			else if (arg == "-s" || arg == "--server")
+				mainServer(argc, argv);
 			else if (arg == "-v" || arg == "--version")
 			{
-				std::cout << commandName << ' ' << version << std::endl;
+				std::cout << clientName << ' ' << version << std::endl;
 				std::exit(0);
 			}
 			else
@@ -199,7 +260,6 @@ static const std::string defaultPidFilename = "/run/" + serverName + ".pid";
 static void mainServer(int argc, const char *argv[])
 {
 	k8psh::Socket::Initializer socketInit;
-	std::string commandName = k8psh::Utilities::getExecutableBasename(argv[0]);
 	std::vector<std::string> deferredArgs;
 	bool daemonize = false;
 	bool disableClientExecutables = false;
@@ -232,21 +292,21 @@ static void mainServer(int argc, const char *argv[])
 				parseOption(arg, "-m", "--max-connections", "[connections]", i, argc, argv, connections, &deferredArgs) ||
 				parseOption(arg, "-p", "--pidfile", "[file]", i, argc, argv, pidFilename, &deferredArgs) ||
 				parseOption(arg, "-t", "--timeout", "[ms]", i, argc, argv, timeout, &deferredArgs))
-			; // Option recognized and parsed
+			; // Option recognized and deferred
 		else if (parseOption(arg, "-c", "--config", "[file]", i, argc, argv, config))
 			config.exists();
 		else if (parseOption(arg, "-n", "--name", "[name]", i, argc, argv, name))
 			; // Option recognized and parsed
 		else if (arg == "-h" || arg == "--help")
 		{
-			std::cout << "Usage: " << commandName << " [options]" << std::endl;
-			std::cout << "  Starts the " << commandName << " server" << std::endl;
+			std::cout << "Usage: " << serverName << " [options]" << std::endl;
+			std::cout << "  Starts the " << serverName << " server" << std::endl;
 			std::cout << std::endl;
 			std::cout << "Options:" << std::endl;
 			std::cout << "  -b, --background" << std::endl;
 			std::cout << "      Daemonize the server by sending it to the background." << std::endl;
 			std::cout << "  -c, --config [file]" << std::endl;
-			std::cout << "      The configuration file loaded by " << commandName << ". Defaults to $" << environmentPrefix << "CONFIG." << std::endl;
+			std::cout << "      The configuration file loaded by " << serverName << ". Defaults to $" << environmentPrefix << "CONFIG." << std::endl;
 			std::cout << "  -d, --disable-client-executables" << std::endl;
 			std::cout << "      Disables generating client executables so only local executables can be run." << std::endl;
 			std::cout << "  -e, --executable-directory [directory]" << std::endl;
@@ -277,9 +337,11 @@ static void mainServer(int argc, const char *argv[])
 		}
 		else if (arg == "-i" || arg == "--ignore-invalid-arguments")
 			ignoreInvalidArguments = true;
+		else if (arg == "-s" || arg == "--server")
+			; // Option ignored
 		else if (arg == "-v" || arg == "--version")
 		{
-			std::cout << commandName << ' ' << version << std::endl;
+			std::cout << serverName << ' ' << version << std::endl;
 			std::exit(0);
 		}
 		else if (ignoreInvalidArguments)
@@ -386,6 +448,8 @@ static void mainServer(int argc, const char *argv[])
 				if (!k8psh::Utilities::deleteFile(*it))
 #endif
 					LOG_WARNING << "Failed to remove client executable " << *it;
+				else
+					LOG_DEBUG << "Removed client executable " << *it;
 			}
 		}
 
@@ -425,6 +489,7 @@ static void mainServer(int argc, const char *argv[])
 #endif
 				LOG_ERROR << "Failed to create client executable for command " << it->second.getName();
 
+			LOG_DEBUG << "Created client executable " << filename;
 			createdExecutables.emplace_back(filename);
 		}
 
