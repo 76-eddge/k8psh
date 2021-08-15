@@ -3,8 +3,11 @@
 
 #include "Configuration.hxx"
 
+#include <memory>
+#include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "Utilities.hxx"
 
@@ -235,6 +238,7 @@ k8psh::Configuration k8psh::Configuration::load(const std::string &configuration
 	// Parse server settings
 	std::shared_ptr<Host> currentHost;
 	unsigned short currentPort = DEFAULT_STARTING_PORT;
+	std::vector<std::pair<std::string, std::string> > environmentVariables;
 
 	for (;;)
 	{
@@ -274,6 +278,22 @@ k8psh::Configuration k8psh::Configuration::load(const std::string &configuration
 			// Assign the new host information
 			currentHost->_hostname = host.substr(0, colon);
 			currentHost->_port = currentPort++;
+
+			// Parse the options for environment variables
+			environmentVariables.clear();
+
+			for (auto it = currentHost->_options.begin();; ++it)
+			{
+				std::size_t equals;
+
+				if (it == currentHost->_options.end() || ((*it)[0] == '-' && (*it)[1] == '-') || (equals = it->find("=", 1)) == std::string::npos)
+				{
+					currentHost->_options.erase(currentHost->_options.begin(), it);
+					break;
+				}
+
+				environmentVariables.emplace_back(std::make_pair(it->substr(0, equals), it->substr(equals + 1)));
+			}
 		}
 		else // Executable
 		{
@@ -284,6 +304,7 @@ k8psh::Configuration k8psh::Configuration::load(const std::string &configuration
 			// Create the command
 			command._host = currentHost;
 			command._name = std::move(values[0]);
+			command._environmentVariables = environmentVariables;
 
 			for (std::size_t j = 1; j < values.size(); j++)
 			{
