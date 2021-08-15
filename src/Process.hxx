@@ -4,9 +4,7 @@
 #ifndef K8PSH_PROCESS_HXX
 #define K8PSH_PROCESS_HXX
 
-#include <cstdint>
 #include <string>
-#include <vector>
 
 #include "Configuration.hxx"
 #include "Socket.hxx"
@@ -28,7 +26,7 @@ public:
 	 * @param configuration the global configuration
 	 * @return the exit code of the process
 	 */
-	static int runRemoteCommand(const std::string &workingDirectory, const Configuration::Command &command, std::size_t argc, const char *argv[], const k8psh::Configuration &configuration);
+	static int runRemoteCommand(const std::string &workingDirectory, const Configuration::Command &command, std::size_t argc, const char *argv[], const Configuration &configuration);
 
 	/** Runs the process requested by the remote socket channel.
 	 *
