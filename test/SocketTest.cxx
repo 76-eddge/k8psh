@@ -4,10 +4,22 @@
 #include "Socket.cxx"
 
 #include <iostream>
+#include <string>
 
 #include "Test.hxx"
 
 #include "Utilities.cxx"
+
+static std::string readString(k8psh::Socket &socket, std::size_t length)
+{
+	std::vector<std::uint8_t> data(length);
+	std::string value;
+
+	value.reserve(length);
+	TEST_THAT(socket.read(data, 0, true) == length);
+	value.insert(value.end(), data.begin(), data.end());
+	return value;
+}
 
 int main()
 {
@@ -42,7 +54,7 @@ int main()
 	// Test writing and reading with offsets
 	std::cout << "Sending offset data" << std::endl;
 	client.write(data, 3);
-	TEST_THAT(server.read(5) == "Hello");
+	TEST_THAT(readString(server, 5) == "Hello");
 
 	static constexpr std::size_t DATA_OFFSET = 3 + 5;
 	static constexpr std::size_t READ_OFFSET = 1;

@@ -234,7 +234,7 @@ static void closePipeHandle(k8psh::Pipe::Handle handle)
 		(void)CloseHandle(handle);
 #else
 	if (handle >= 0)
-		close(handle);
+		(void)close(handle);
 #endif
 }
 

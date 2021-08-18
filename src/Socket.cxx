@@ -11,6 +11,7 @@
 #else
 	#include <arpa/inet.h>
 	#include <netinet/in.h>
+	#include <netinet/tcp.h>
 	#include <poll.h>
 	#include <sys/socket.h>
 	#include <unistd.h>
@@ -99,6 +100,13 @@ template <typename OptionT, typename T> static bool setSocketOption(k8psh::Socke
 #endif
 }
 
+// Sets all common socket options on a socket
+static void setSocketOptions(k8psh::Socket::Handle handle)
+{
+	// Disable Nagle's algorithm
+	(void)setSocketOption<IF_WINSOCK(BOOL, int)>(handle, IPPROTO_TCP, TCP_NODELAY, 1);
+}
+
 // Creates a new server socket listening on the specified port.
 k8psh::Socket k8psh::Socket::listen(unsigned short port)
 {
@@ -159,6 +167,7 @@ k8psh::Socket k8psh::Socket::connect(unsigned short port, bool failOnError)
 		return INVALID_HANDLE;
 	}
 
+	setSocketOptions(socket._handle);
 	LOG_DEBUG << "Connected to port " << port << " on socket " << socket._handle;
 	return socket;
 }
@@ -192,6 +201,7 @@ k8psh::Socket k8psh::Socket::accept()
 		return INVALID_HANDLE;
 	}
 
+	setSocketOptions(handle);
 	LOG_DEBUG << "Accepted new connection (" << handle << ") on socket " << _handle;
 	return Socket(handle);
 }
@@ -327,32 +337,24 @@ std::size_t k8psh::Socket::read(std::vector<std::uint8_t> &data, std::size_t off
 	return socketRead(_handle, &data[offset], data.size() - offset, waitAll);
 }
 
-// Reads a string from the socket.
-std::string k8psh::Socket::read(std::size_t length)
-{
-	std::string value(length, '\0');
-
-	(void)socketRead(_handle, &value[0], length, true);
-	return value;
-}
-
-/** Writes data to the socket, up to the size of the vector.
+/** Writes data to the socket, up to the ending index.
  *
  * @param data a vector of data to write to the socket
  * @param offset the offset into the vector to write data from
+ * @param end the ending index (exclusive) of the data to write
  * @return the number of bytes written to the socket
  */
-std::size_t k8psh::Socket::write(const std::vector<std::uint8_t> &data, std::size_t offset)
+std::size_t k8psh::Socket::write(const std::vector<std::uint8_t> &data, std::size_t offset, std::size_t end)
 {
-	LOG_DEBUG << "Writing up to " << (data.size() - offset) << " bytes on socket " << _handle;
+	LOG_DEBUG << "Writing bytes " << offset << " - " << end << " on socket " << _handle;
 	std::size_t totalSent = 0;
 
-	while (offset < data.size())
+	while (offset < end)
 	{
 #ifdef _WIN32
-		int length = int(data.size() - offset);
+		int length = int(end - offset);
 #else
-		std::size_t length = data.size() - offset;
+		std::size_t length = end - offset;
 #endif
 		auto sent = send(_handle, reinterpret_cast<const char *>(data.data() + offset), length, 0);
 

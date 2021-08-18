@@ -110,16 +110,22 @@ public:
 	 */
 	std::size_t read(std::vector<std::uint8_t> &data, std::size_t offset = 0, bool waitAll = false);
 
-	// Reads a string from the socket.
-	std::string read(std::size_t length);
-
-	/** Writes data to the socket, up to the size of the vector.
+	/** Writes data to the socket from the specified offset.
 	 *
 	 * @param data a vector of data to write to the socket
 	 * @param offset the offset into the vector to write data from
 	 * @return the number of bytes written to the socket
 	 */
-	std::size_t write(const std::vector<std::uint8_t> &data, std::size_t offset = 0);
+	std::size_t write(const std::vector<std::uint8_t> &data, std::size_t offset = 0) { return write(data, offset, data.size()); }
+
+	/** Writes data to the socket, up to the ending index.
+	 *
+	 * @param data a vector of data to write to the socket
+	 * @param offset the offset into the vector to write data from
+	 * @param end the ending index (exclusive) of the data to write
+	 * @return the number of bytes written to the socket
+	 */
+	std::size_t write(const std::vector<std::uint8_t> &data, std::size_t offset, std::size_t end);
 };
 
 } // k8psh
