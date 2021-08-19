@@ -109,7 +109,7 @@ static void mainClient(int argc, const char *argv[])
 {
 	std::string commandName = k8psh::Utilities::getExecutableBasename(argv[0]);
 	k8psh::OptionalString config;
-	std::string copyFilename;
+	std::string installFilename;
 	std::size_t i = 1;
 
 	// Parse command line arguments
@@ -122,15 +122,33 @@ static void mainClient(int argc, const char *argv[])
 
 			if (parseOption(arg, "-c", "--config", "[config]", i, argc, argv, config))
 				config.exists();
-			else if (parseOption(arg, "", "--copy-to", "[file]", i, argc, argv, copyFilename))
+			else if (arg == "-h" || arg == "--help")
+			{
+				std::cout << "Usage: " << clientName << " [-s | --server] [options] command..." << std::endl;
+				std::cout << "  Executes a " << clientName << " client command" << std::endl;
+				std::cout << std::endl;
+				std::cout << "Options:" << std::endl;
+				std::cout << "  -c, --config [file]" << std::endl;
+				std::cout << "      The configuration file loaded by " << clientName << ". Defaults to $" << environmentPrefix << "CONFIG." << std::endl;
+				std::cout << "  -h, --help" << std::endl;
+				std::cout << "      Displays usage and exits." << std::endl;
+				std::cout << "  --install [file]" << std::endl;
+				std::cout << "      Installs " << clientName << " to the specified file, overwriting any existing file, and then exits." << std::endl;
+				std::cout << "  -s, --server" << std::endl;
+				std::cout << "      Runs the server, with all options passed to the server." << std::endl;
+				std::cout << "  -v, --version" << std::endl;
+				std::cout << "      Prints the version and exits." << std::endl;
+				std::exit(0);
+			}
+			else if (parseOption(arg, "", "--install", "[file]", i, argc, argv, installFilename))
 			{
 				std::string clientCommand = k8psh::Utilities::getExecutablePath();
 
 #ifdef _WIN32
-				if (CreateHardLinkA(copyFilename.c_str(), clientCommand.c_str(), NULL) == 0 && CopyFileA(clientCommand.c_str(), copyFilename.c_str(), FALSE) == 0)
-					LOG_ERROR << "Failed to copy " << clientCommand << " to " << copyFilename << ": " << GetLastError();
+				if (CreateHardLinkA(installFilename.c_str(), clientCommand.c_str(), NULL) == 0 && CopyFileA(clientCommand.c_str(), installFilename.c_str(), FALSE) == 0)
+					LOG_ERROR << "Failed to install " << clientCommand << " to " << installFilename << ": " << GetLastError();
 #else
-				if (link(clientCommand.c_str(), copyFilename.c_str()) != 0)
+				if (link(clientCommand.c_str(), installFilename.c_str()) != 0)
 				{
 					char buffer[8192];
 					int source = open(clientCommand.c_str(), O_RDONLY, 0);
@@ -138,10 +156,10 @@ static void mainClient(int argc, const char *argv[])
 					if (source < 0)
 						LOG_ERROR << "Failed to open " << clientCommand << ": " << errno;
 
-					int dest = open(copyFilename.c_str(), O_WRONLY | O_CREAT, 0755);
+					int dest = open(installFilename.c_str(), O_WRONLY | O_CREAT, 0755);
 
 					if (dest < 0)
-						LOG_ERROR << "Failed to open " << copyFilename << ": " << errno;
+						LOG_ERROR << "Failed to open " << installFilename << ": " << errno;
 
 					for (;;)
 					{
@@ -156,15 +174,15 @@ static void mainClient(int argc, const char *argv[])
 								if (wrote == size)
 									break;
 								else if (wrote >= 0)
-									LOG_ERROR << "Failed to write data to " << copyFilename << " while copying data from " << clientCommand;
+									LOG_ERROR << "Failed to write data to " << installFilename << " while installing from " << clientCommand;
 								else if (errno != EINTR)
-									LOG_ERROR << "Failed to write data to " << copyFilename << " while copying data from " << clientCommand << ": " << errno;
+									LOG_ERROR << "Failed to write data to " << installFilename << " while installing from " << clientCommand << ": " << errno;
 							}
 						}
 						else if (size == 0)
 							break;
 						else if (errno != EINTR)
-							LOG_ERROR << "Failed to read data from " << clientCommand << " to be copied into " << copyFilename << ": " << errno;
+							LOG_ERROR << "Failed to read data from " << clientCommand << " to be installed into " << installFilename << ": " << errno;
 					}
 
 					(void)close(source);
@@ -172,24 +190,6 @@ static void mainClient(int argc, const char *argv[])
 				}
 #endif
 
-				std::exit(0);
-			}
-			else if (arg == "-h" || arg == "--help")
-			{
-				std::cout << "Usage: " << clientName << " [-s | --server] [options] command..." << std::endl;
-				std::cout << "  Executes a " << clientName << " client command" << std::endl;
-				std::cout << std::endl;
-				std::cout << "Options:" << std::endl;
-				std::cout << "  -c, --config [file]" << std::endl;
-				std::cout << "      The configuration file loaded by " << clientName << ". Defaults to $" << environmentPrefix << "CONFIG." << std::endl;
-				std::cout << "  --copy-to [file]" << std::endl;
-				std::cout << "      Copies this binary to the specified file, overwriting existing files, and then exits." << std::endl;
-				std::cout << "  -h, --help" << std::endl;
-				std::cout << "      Displays usage and exits." << std::endl;
-				std::cout << "  -s, --server" << std::endl;
-				std::cout << "      Runs the server, with all options passed to the server." << std::endl;
-				std::cout << "  -v, --version" << std::endl;
-				std::cout << "      Prints the version and exits." << std::endl;
 				std::exit(0);
 			}
 			else if (arg == "-s" || arg == "--server")

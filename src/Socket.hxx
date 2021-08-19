@@ -30,15 +30,13 @@ public:
 #ifdef _WIN32
 	typedef SOCKET Handle;
 	typedef HANDLE Event;
-
-	static constexpr Handle INVALID_HANDLE = INVALID_SOCKET;
 #else
 	typedef int Handle;
 	typedef int Event;
+#endif
 
 	static constexpr Handle INVALID_HANDLE = Handle(-1);
-#endif
-	static const unsigned short RANDOM_PORT = 0;
+	static constexpr unsigned short RANDOM_PORT = 0;
 
 private:
 	Handle _handle;

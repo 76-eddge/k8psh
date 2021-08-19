@@ -10,7 +10,7 @@ spec:
       - name: k8psh
         image: 76eddge/k8psh
         imagePullPolicy: Never
-        args: [ --copy-to, /k8psh/bin/k8pshd ]
+        args: [ --install, /k8psh/bin/k8pshd ]
         env:
         - name: K8PSH_DEBUG # To debug, modify the Dockerfile to have cmake create a debug build
           value: 'Process, Main, Configuration'
