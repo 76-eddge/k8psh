@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.15)
 
 # Get the version
 execute_process(COMMAND git describe --tags OUTPUT_VARIABLE GIT_VERSION ERROR_QUIET)
@@ -40,7 +40,7 @@ add_executable(k8psh src/k8psh.cxx)
 install(TARGETS k8psh)
 
 if (MSVC)
-  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+  set_property(TARGET k8psh PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 elseif (NOT APPLE)
   target_link_libraries(k8psh PRIVATE -static)
 endif ()
