@@ -73,7 +73,7 @@ public:
 
 // Logs a debug statement (if not enabled, statement has no side effect). Example: `LOG_DEBUG << "Here's some debug info: " << a << ", " << b;`
 #if defined(DEBUG) || defined(_DEBUG) || defined(K8PSH_DEBUG)
-	#define LOG_DEBUG for (bool _k8psh_shouldLog_ = ::k8psh::Logger::shouldLogDebug(__FILE__); _k8psh_shouldLog_; _k8psh_shouldLog_ = !_k8psh_shouldLog_) \
+	#define LOG_DEBUG for (bool LOG_DEBUG_shouldLog_ = ::k8psh::Logger::shouldLogDebug(__FILE__); LOG_DEBUG_shouldLog_; LOG_DEBUG_shouldLog_ = !LOG_DEBUG_shouldLog_) \
 		::k8psh::Logger(__FILE__, __LINE__, PREPROCESSOR_FUNCTION_IDENTIFIER, ::k8psh::Logger::LEVEL_DEBUG).getStream()
 #else
 struct NullStream
@@ -91,8 +91,8 @@ struct NullStream
 #define LOG_WARNING ::k8psh::Logger(__FILE__, __LINE__, PREPROCESSOR_FUNCTION_IDENTIFIER, ::k8psh::Logger::LEVEL_WARNING).getStream()
 
 // Logs an error and throws an exception. Example: `LOG_ERROR << "An error occured";`
-#define LOG_ERROR for (std::string message;; throw std::runtime_error(message)) \
-	::k8psh::Logger(__FILE__, __LINE__, PREPROCESSOR_FUNCTION_IDENTIFIER, ::k8psh::Logger::LEVEL_ERROR, &message).getStream()
+#define LOG_ERROR for (std::string LOG_ERROR_message_;; throw std::runtime_error(LOG_ERROR_message_)) \
+	::k8psh::Logger(__FILE__, __LINE__, PREPROCESSOR_FUNCTION_IDENTIFIER, ::k8psh::Logger::LEVEL_ERROR, &LOG_ERROR_message_).getStream()
 
 class Pipe
 {
