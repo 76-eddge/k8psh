@@ -37,7 +37,11 @@ jobs:
         github token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Test Dockerfile
-      run: docker build . --tag 76eddge/k8psh --target deploy
+      run: |
+        docker build . --tag 76eddge/k8psh --target deploy
+        docker run -t --rm 76eddge/k8psh
+        docker build . --tag 76eddge/k8psh:debug --target deploy-debug
+        docker run -t --rm 76eddge/k8psh:debug
       env:
         DOCKER_BUILDKIT: 1
 
@@ -91,7 +95,9 @@ jobs:
 
     - name: Push Docker Images
       if: startsWith(github.ref, 'refs/tags/')
-      run: docker buildx build . --tag 76eddge/k8psh --tag 76eddge/k8psh:${GITHUB_REF/refs\/tags\//} --platform linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64/v8,linux/ppc64le,linux/s390x --target deploy --push
+      run: |
+        docker buildx build . --tag 76eddge/k8psh --tag 76eddge/k8psh:${GITHUB_REF/refs\/tags\//} --platform linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64/v8,linux/ppc64le,linux/s390x --target deploy --push
+        docker buildx build . --tag 76eddge/k8psh:debug --tag 76eddge/k8psh:${GITHUB_REF/refs\/tags\//}-debug --platform linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64/v8,linux/ppc64le,linux/s390x --target deploy-debug --push
 
   windows:
     runs-on: windows-latest
@@ -101,9 +107,7 @@ jobs:
     - run: choco install cmake ninja
 
     - name: Enable MSVC
-      uses: ilammy/msvc-dev-cmd@v1.9.0
-      with:
-        toolset: "14.0"
+      uses: ilammy/msvc-dev-cmd@v1
 
     - name: Build & Test
       run: |
