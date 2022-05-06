@@ -165,9 +165,9 @@ public:
 		std::string string;
 		string.reserve(length);
 
-		while (_end - _readOffset < length)
+		while (_end - _readOffset < length - string.length())
 		{
-			string.insert(string.end(), &_data[_readOffset], &_data[_end]);
+			string.append(reinterpret_cast<const char *>(&_data[_readOffset]), _end - _readOffset);
 			_readOffset = 0;
 			_end = _socket.read(_data);
 
@@ -175,8 +175,9 @@ public:
 				LOG_ERROR << "Socket closed after reading " << string.length() << " of " << length << " bytes";
 		}
 
-		string.insert(string.end(), &_data[_readOffset], &_data[_readOffset + length]);
-		_readOffset += length;
+		std::size_t remaining = length - string.length();
+		string.append(reinterpret_cast<const char *>(&_data[_readOffset]), remaining);
+		_readOffset += remaining;
 
 		if (_readOffset == _end)
 			_readOffset = _end = 0;
