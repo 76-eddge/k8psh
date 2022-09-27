@@ -666,7 +666,12 @@ static void mainServer(int argc, const char *argv[])
 				}
 			}
 
-			LOG_DEBUG << "Shutting down the server, handled " << connectionCount << " connection(s)";
+			if (maxConnections >= 0 && connectionCount >= maxConnections)
+				LOG_INFO << "Shutting down the server after accepting the maximum number of connections (" << connectionCount << ")";
+			else if (timeoutMs >= 0)
+				LOG_INFO << "Shutting down the server after timeout (" << timeoutMs << "ms)";
+			else
+				LOG_DEBUG << "Shutting down the server, handled " << connectionCount << " connection(s)";
 
 #ifdef _WIN32
 			if (waitOnClientConnections && connectionCount)
